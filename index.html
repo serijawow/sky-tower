@@ -192,21 +192,24 @@ const sOver    = () => tone(300, 0.55, 'sawtooth', 0.16, 80);
 const sFanfare = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.2), i * 95));
 const sGold    = () => { tone(988, 0.07, 'square', 0.16); setTimeout(() => tone(1319, 0.12, 'square', 0.14), 70); };
 const sBoom    = () => { tone(90, 0.45, 'sawtooth', 0.4, 30); tone(420, 0.16, 'square', 0.22, 55); };
-function sMeow(){ // one confident alpha meow + bass drop
+function sMeow(power){ // alpha meow — more power = deeper, longer, mightier
   if (muted) return; const a = ac(); if (!a) return;
+  const p = Math.min(10, Math.max(3, power || 3));
   const t = a.currentTime;
-  [['sawtooth', 0.16], ['sine', 0.22]].forEach(p => {
+  const f0 = 300 - p * 12, f1 = 520 - p * 18, f2 = Math.max(60, 150 - p * 8);
+  const dur = 0.55 + p * 0.05;
+  [['sawtooth', 0.10 + p * 0.013], ['sine', 0.16 + p * 0.02]].forEach(q => {
     const o = a.createOscillator(), g = a.createGain();
-    o.type = p[0];
-    o.frequency.setValueAtTime(300, t);
-    o.frequency.exponentialRampToValueAtTime(520, t + 0.14); // me-
-    o.frequency.exponentialRampToValueAtTime(150, t + 0.55); // -oww
+    o.type = q[0];
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + 0.12 + p * 0.008); // me-
+    o.frequency.exponentialRampToValueAtTime(f2, t + dur);              // -ooowww
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(p[1], t + 0.06);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.65);
+    g.gain.exponentialRampToValueAtTime(q[1], t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.1);
   });
-  setTimeout(() => tone(55, 0.3, 'sine', 0.5, 38), 560); // alpha bass drop
+  setTimeout(() => tone(Math.max(38, 55 - p * 1.5), 0.32, 'sine', Math.min(0.6, 0.4 + p * 0.02), 36), dur * 1000); // bass drop
 }
 const sFever   = () => [440, 587, 880].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sawtooth', 0.14), i * 70));
 function firework(x, y, n){
@@ -305,32 +308,58 @@ function spawn(){
           dir, spd, range, gold, bomb, cat, bh,
           hue: bomb ? 4 : gold ? 46 : (205 + L * 6) % 360 };
 }
-function blessing(){ // tapped the alpha cat: +3 floors materialize
+function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessings
   cur = null;
-  let t2 = stack[stack.length - 1];
-  const bx = t2.x;
-  for (let i = 0; i < 3; i++){
-    stack.push({ x: t2.x, y: t2.y - B, w: t2.w, hue: (205 + stack.length * 6) % 360,
-                 land: 1 + i * 0.35, bh: B });
-    t2 = stack[stack.length - 1];
-  }
-  floors += 3;
-  $('floors').textContent = floors;
-  floatTxt(bx, t2.y - 34, '😼 알파냥의 축복 +3층!', '#ffd76b', 22);
+  const roll = forcedRoll !== undefined ? forcedRoll : Math.random();
+  const top0 = stack[stack.length - 1];
   for (let i = 0; i < 4; i++)
-    floatTxt(bx + (Math.random() - 0.5) * 160, t2.y + Math.random() * 80, '🐾', '#fff', 16);
-  firework(bx, t2.y, 18); flash = 0.4;
-  sMeow();
-  [0, 110, 220].forEach(ms => setTimeout(() => tone(330 + ms, 0.07, 'square', 0.14), ms));
-  camYT = t2.y - H * 0.62;
+    floatTxt(top0.x + (Math.random() - 0.5) * 160, top0.y + Math.random() * 80, '🐾', '#fff', 16);
   nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
-  spawn();
+
+  if (roll < 0.25 && top0.w < baseW() * 0.7){ // 1) full width restore — only when you need it
+    top0.w = baseW(); top0.land = 1.4;
+    floatTxt(top0.x, top0.y - 30, '😼 몸집 복구 냥!! 풀사이즈', '#ffd76b', 21);
+    firework(top0.x, top0.y, 16); flash = 0.4;
+    sMeow(4);
+    spawn();
+  } else if (roll < 0.5){ // 2) instant fever infection
+    combo = Math.max(combo, 5);
+    $('combo').textContent = '🔥 FEVER x' + combo;
+    $('combo').classList.remove('hidden-hard');
+    floatTxt(top0.x, top0.y - 30, '😼🔥 알파 피버 전염!!', '#ff9d4d', 22);
+    firework(top0.x, top0.y, 16); flash = 0.4;
+    sMeow(5);
+    spawn();
+  } else { // 3) KWANG KWANG KWANG — 3..10 floors slam down, meow scales with count
+    const n = 3 + Math.floor(Math.random() * 8);
+    floatTxt(top0.x, top0.y - 34, '😼 알파냥 강림!!', '#ffd76b', 22);
+    for (let i = 0; i < n; i++){
+      setTimeout(() => {
+        const t2 = stack[stack.length - 1];
+        stack.push({ x: t2.x, y: t2.y - B, w: t2.w, hue: (205 + stack.length * 6) % 360,
+                     land: 1.5, bh: B });
+        floors++; $('floors').textContent = floors;
+        shake = Math.max(shake, 7);
+        tone(70 + Math.random() * 20, 0.18, 'sine', 0.5, 45); // KWANG
+        tone(180, 0.06, 'square', 0.12);
+        chips(t2.x - t2.w / 2, t2.y - B, 46, 3); chips(t2.x + t2.w / 2, t2.y - B, 46, 3);
+        camYT = stack[stack.length - 1].y - H * 0.62;
+        if (i === n - 1){ // finale: deeper meow for more slams
+          floatTxt(t2.x, t2.y - 56, '쾅쾅쾅!! +' + n + '층', '#ffd76b', 25);
+          firework(t2.x, t2.y - 20, 22); flash = 0.5;
+          sMeow(n);
+          spawn();
+        }
+      }, 200 + i * 160);
+    }
+  }
 }
 function explode(){ // tapped the bomb: blow the top 2 floors off
   const bx = cur.x, by = cur.y;
   cur = null;
   let lost = 0;
   const target = Math.min(10, Math.max(3, Math.ceil(floors * 0.25))); // scales with tower height
+  const preFloors = floors; // bomb grace: nothing until you reclaim your peak
   while (stack.length > 1 && lost < target){
     const b = stack.pop();
     debris.push({ x: b.x, y: b.y, w: b.w, vx: (Math.random() - 0.5) * 9, vy: -3 - Math.random() * 2.5,
@@ -345,7 +374,7 @@ function explode(){ // tapped the bomb: blow the top 2 floors off
   floatTxt(bx, by - 30, '💥 펑!! -' + lost + '층', '#ff6b5e', 26);
   sBoom();
   camYT = stack[stack.length - 1].y - H * 0.62;
-  nextBombAt = floors + 8 + Math.floor(Math.random() * 6);
+  nextBombAt = preFloors + 11 + Math.floor(Math.random() * 8); // grace past previous peak
   spawn();
 }
 function start(){
@@ -531,7 +560,7 @@ function update(dt){
     cur.x += cur.dir * cur.spd * dt;
     if (cur.bomb || cur.cat){ // one fast pass, then it's gone
       if ((cur.dir > 0 && cur.x > W / 2 + cur.range) || (cur.dir < 0 && cur.x < W / 2 - cur.range)){
-        if (cur.bomb) nextBombAt = floors + 8 + Math.floor(Math.random() * 6);
+        if (cur.bomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
         else {
           nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
           floatTxt(W / 2, stack[stack.length - 1].y - 60, '😼 …시크하게 지나갔다', '#9fb4e8', 14);
@@ -804,6 +833,8 @@ window.__sky = {
   miss(){ if (cur) cur.x = stack[stack.length - 1].x + stack[stack.length - 1].w + cur.w; },
   bomb: () => !!(cur && cur.bomb),
   cat: () => !!(cur && cur.cat),
+  nextBomb: () => nextBombAt,
+  bless(r){ blessing(r); },
   makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
   makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
 };
