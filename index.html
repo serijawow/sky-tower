@@ -594,14 +594,19 @@ function update(dt){
 
   if (state === 'play' && cur){
     cur.x += cur.dir * cur.spd * dt;
-    if (cur.bomb || cur.cat){ // one fast pass, then it's gone
+    if (cur.bomb || cur.cat){ // one fast pass; off the wall it becomes a normal block
       if ((cur.dir > 0 && cur.x > W / 2 + cur.range) || (cur.dir < 0 && cur.x < W / 2 - cur.range)){
         if (cur.bomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
         else {
           nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
           floatTxt(W / 2, stack[stack.length - 1].y - 60, '😼 …시크하게 지나갔다', '#9fb4e8', 14);
         }
-        spawn();
+        cur.x = cur.dir > 0 ? W / 2 + cur.range : W / 2 - cur.range;
+        cur.dir = -cur.dir;
+        cur.bomb = false; cur.cat = false;
+        cur.spd /= 1.8; // back to normal pace
+        cur.hue = (205 + stack.length * 6) % 360;
+        if (combo >= 3){ cur.bh = B * 2; cur.y = stack[stack.length - 1].y - B * 2; } // honor active fever
       }
     } else {
       if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; }
