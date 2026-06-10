@@ -43,6 +43,10 @@
   #hud{position:fixed;top:0;left:0;right:0;z-index:5;pointer-events:none;
     padding:calc(14px + env(safe-area-inset-top)) 18px 0;transition:opacity .3s}
   #hud.hidden{opacity:0}
+  #combo{text-align:center;font-size:16px;font-weight:800;color:#ffd76b;margin-top:2px;
+    text-shadow:0 2px 12px rgba(255,160,60,.65);animation:pulse .9s infinite}
+  #finalZone{font-size:13px;color:#9fb4e8;font-weight:700;margin-bottom:2px}
+  .hint{margin-top:12px;font-size:12px;color:#6f7fa8}
   #floors{text-align:center;font-size:64px;font-weight:900;line-height:1;
     text-shadow:0 4px 24px rgba(120,180,255,.45)}
   #hudBest{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;
@@ -80,6 +84,7 @@
 
 <div id="hud" class="hidden">
   <div id="floors">0</div>
+  <div id="combo" class="hidden-hard"></div>
   <div id="hudBest"></div>
 </div>
 
@@ -99,9 +104,11 @@
     <div id="beat" class="hidden-hard">😎 친구 기록 격파!</div>
     <div class="score-label">이번 기록</div>
     <div id="finalScore">0층</div>
+    <div id="finalZone"></div>
     <div id="overBest"></div>
     <button id="btnShare">📨 친구에게 도전장 보내기</button>
     <button id="btnRetry">🔄 다시 쌓기</button>
+    <div class="hint">패널 바깥을 탭해도 바로 다시 시작!</div>
   </div>
 </div>
 
@@ -126,19 +133,31 @@ const B = 34;            // block height
 const PERF = 8;          // perfect drop tolerance (px)
 const GROW = 7;          // width regained per perfect
 const baseW = () => Math.min(300, W * 0.72);
+const ZONES = [
+  { at: 0,  name: '',              h: 224, s: 52, l: 17 },
+  { at: 15, name: '노을 지대 🌅',   h: 358, s: 60, l: 22 },
+  { at: 30, name: '오로라 지대 🌌', h: 158, s: 55, l: 18 },
+  { at: 45, name: '우주 지대 🪐',   h: 268, s: 55, l: 14 },
+  { at: 65, name: '별의 바다 ✨',   h: 200, s: 65, l: 20 },
+  { at: 90, name: '신들의 영역 ⚡', h: 45,  s: 60, l: 18 }
+];
+function zoneIdxOf(f){ let z = 0; for (let i = 0; i < ZONES.length; i++) if (f >= ZONES[i].at) z = i; return z; }
+function lerpHue(a, b, k){ const d = ((b - a + 540) % 360) - 180; return (a + d * k + 360) % 360; }
 
 /* ================= state ================= */
 let state = 'menu';      // menu | play | dying | over
 let stack = [], cur = null, debris = [], parts = [], floats = [], confettis = [];
 let floors = 0, combo = 0, best = 0, newRec = false, beatChall = false, flash = 0;
 let camY = 0, camYT = 0, zoom = 1, zoomT = 1, shake = 0;
+let bgH = 224, bgS = 52, bgL = 17, curZone = 0, timeScale = 1, overAt = 0, tick = 0;
 try { best = +localStorage.getItem('skytower_best') || 0; } catch(e) {}
 
 const challenge = Math.max(0, parseInt(new URLSearchParams(location.search).get('s'), 10) || 0);
 
 const stars = [];
 for (let i = 0; i < 70; i++)
-  stars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + 0.5, a: Math.random() * 0.5 + 0.15 });
+  stars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + 0.5,
+               a: Math.random() * 0.5 + 0.15, tw: Math.random() * 3 + 1 });
 
 /* ================= audio ================= */
 let AC = null;
@@ -164,6 +183,15 @@ const sPerfect = c  => { const f = 523 * Math.pow(1.0595, Math.min(c, 14));
                          tone(f, 0.09, 'sine', 0.22); setTimeout(() => tone(f * 1.26, 0.12, 'sine', 0.18), 55); };
 const sOver    = () => tone(300, 0.55, 'sawtooth', 0.16, 80);
 const sFanfare = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.2), i * 95));
+const sGold    = () => { tone(988, 0.07, 'square', 0.16); setTimeout(() => tone(1319, 0.12, 'square', 0.14), 70); };
+const sFever   = () => [440, 587, 880].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sawtooth', 0.14), i * 70));
+function firework(x, y, n){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * 6.283, v = Math.random() * 4 + 1.5;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1,
+                 s: Math.random() * 4 + 2, t: 1, hue: Math.random() * 360 });
+  }
+}
 
 /* ================= helpers ================= */
 function setBestUI(){
@@ -200,15 +228,19 @@ function reset(){
   stack = [{ x: W / 2, y: 0, w: baseW(), hue: 205, land: 0 }];
   debris = []; parts = []; floats = []; confettis = [];
   floors = 0; combo = 0; newRec = false; beatChall = false;
+  curZone = 0; timeScale = 1;
   camYT = -H * 0.62; camY = camYT; zoom = 1; zoomT = 1; shake = 0;
   $('floors').textContent = '0';
+  $('combo').classList.add('hidden-hard');
 }
 function spawn(){
   const L = stack.length, top = stack[L - 1];
   const range = baseW() / 2 + Math.min(W * 0.2, 110);
-  const spd = Math.min(2.4 + floors * 0.055, 7) * (W < 420 ? 0.95 : 1);
-  cur = { x: W / 2 + (L % 2 ? range : -range), y: -L * B, w: top.w,
-          dir: L % 2 ? -1 : 1, spd, range, hue: (205 + L * 6) % 360 };
+  const spd = (Math.min(2.4 + floors * 0.055, 7) + (combo >= 3 ? 0.6 : 0)) * (W < 420 ? 0.95 : 1);
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const gold = L > 0 && L % 10 === 0;
+  cur = { x: W / 2 - dir * range, y: -L * B, w: top.w,
+          dir, spd, range, gold, hue: gold ? 46 : (205 + L * 6) % 360 };
 }
 function start(){
   ac();
@@ -236,10 +268,18 @@ function drop(){
 
   if (Math.abs(dx) <= PERF){ // perfect!
     combo++;
+    const fever = combo >= 3;
     cur.x = top.x;
-    cur.w = Math.min(cur.w + GROW, baseW());
+    cur.w = cur.gold ? baseW() : Math.min(cur.w + (fever ? 12 : GROW), baseW());
     ring(cur.x, cur.y + B / 2, cur.hue);
-    floatTxt(cur.x, cur.y - 12, combo > 1 ? 'PERFECT x' + combo + '!' : 'PERFECT!', '#ffe177', 18 + Math.min(combo * 1.5, 10));
+    if (cur.gold){
+      floatTxt(cur.x, cur.y - 14, '💰 GOLDEN PERFECT!', '#ffd76b', 22);
+      firework(cur.x, cur.y, 26); sGold();
+    } else {
+      floatTxt(cur.x, cur.y - 12, combo > 1 ? 'PERFECT x' + combo + '!' : 'PERFECT!', '#ffe177', 18 + Math.min(combo * 1.5, 10));
+    }
+    if (combo === 3){ floatTxt(cur.x, cur.y - 44, '🔥 FEVER TIME! 🔥', '#ff9d4d', 24); sFever(); }
+    if (fever) firework(cur.x, cur.y + B / 2, 12);
     flash = 0.5;
     sPerfect(combo);
   } else {
@@ -250,27 +290,41 @@ function drop(){
                   vr: (dx > 0 ? 1 : -1) * 0.06, hue: cur.hue });
     chips(dx > 0 ? R : L, cur.y, cur.hue);
     cur.x = (L + R) / 2; cur.w = ov;
+    if (cur.gold){
+      cur.w = Math.min(ov + 22, baseW());
+      floatTxt(cur.x, cur.y - 14, '💰 골드 보너스!', '#ffd76b', 18);
+      sGold();
+    }
     shake = Math.max(shake, 3);
     sPlace();
+    if (cur.w < baseW() * 0.32) tone(110, 0.18, 'triangle', 0.4, 55); // danger thump
   }
 
   stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1 });
   floors = stack.length - 1;
   $('floors').textContent = floors;
+  $('combo').textContent = '🔥 PERFECT x' + combo;
+  $('combo').classList.toggle('hidden-hard', combo < 2);
 
   if (challenge > 0 && !beatChall && floors > challenge){
     beatChall = true;
     floatTxt(cur.x, cur.y - 40, '친구 기록 돌파!! 🔥', '#7dffc4', 22);
     confetti(); sFanfare();
-  } else if (floors % 10 === 0){
-    floatTxt(cur.x, cur.y - 36, floors + '층 돌파! 🚀', '#7df0ff', 19);
+  }
+  const zi = zoneIdxOf(floors);
+  if (zi !== curZone){
+    curZone = zi;
+    if (ZONES[zi].name){
+      floatTxt(cur.x, cur.y - 74, '⸺ ' + ZONES[zi].name + ' 진입 ⸺', '#ffffff', 23);
+      flash = 0.6; sFanfare();
+    }
   }
 
   camYT = -floors * B - H * 0.62;
   spawn();
 }
 function die(){
-  state = 'dying'; shake = 12; sOver();
+  state = 'dying'; shake = 12; timeScale = 0.3; sOver(); // slow-mo drama
   if (floors > best){
     best = floors; newRec = true;
     try { localStorage.setItem('skytower_best', best); } catch(e) {}
@@ -278,11 +332,13 @@ function die(){
   setTimeout(showOver, 800);
 }
 function showOver(){
-  state = 'over';
+  state = 'over'; timeScale = 1; overAt = performance.now();
   const towerH = (floors + 1) * B;
   zoomT = Math.min(1, (H * 0.72) / towerH);
   camYT = -H * 0.86;
   $('finalScore').textContent = floors + '층';
+  const zi = zoneIdxOf(floors);
+  $('finalZone').textContent = zi > 0 ? ZONES[zi].name + ' 도달!' : '';
   $('overBest').textContent = '🏆 최고 기록 ' + best + '층';
   $('newrec').classList.toggle('hidden-hard', !newRec);
   $('beat').classList.toggle('hidden-hard', !(beatChall && !newRec));
@@ -294,9 +350,11 @@ function showOver(){
 
 /* ================= share ================= */
 function shareTxt(){
+  const zi = zoneIdxOf(floors);
+  const zn = zi > 0 ? ' · ' + ZONES[zi].name : '';
   if (challenge > 0 && floors > challenge)
-    return '🏯 하늘탑 ' + challenge + '층 도전장? 내가 ' + floors + '층으로 깼다 ㅋㅋ 복수해봐';
-  return '🏯 하늘탑 ' + floors + '층 달성! 너 이거 깰 수 있어?';
+    return '🏯 하늘탑 ' + challenge + '층 도전장? 내가 ' + floors + '층' + zn + '으로 깼다 ㅋㅋ 복수해봐';
+  return '🏯 하늘탑 ' + floors + '층' + zn + ' 달성! 너 이거 깰 수 있어?';
 }
 function shareUrl(){
   return location.origin + location.pathname + (floors > 0 ? '?s=' + floors : '');
@@ -323,9 +381,10 @@ function fallbackCopy(t){
 function tap(){
   if (state === 'menu') start();
   else if (state === 'play') drop();
+  else if (state === 'over' && performance.now() - overAt > 1200) start(); // quick retry
 }
 window.addEventListener('pointerdown', e => {
-  if (e.target.closest('button')) return;
+  if (e.target.closest('button') || e.target.closest('.panel')) return;
   tap();
 });
 window.addEventListener('keydown', e => {
@@ -344,10 +403,20 @@ function update(dt){
   shake *= Math.pow(0.86, dt);
   flash *= Math.pow(0.85, dt);
 
+  const zt = ZONES[zoneIdxOf(floors)];
+  bgH = lerpHue(bgH, zt.h, lerpK(0.02, dt));
+  bgS += (zt.s - bgS) * lerpK(0.02, dt);
+  bgL += (zt.l - bgL) * lerpK(0.02, dt);
+
   if (state === 'play' && cur){
     cur.x += cur.dir * cur.spd * dt;
     if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; }
     if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; }
+    tick++;
+    if (combo >= 3 && tick % 2 === 0) // fever trail
+      parts.push({ x: cur.x + (Math.random() - 0.5) * cur.w, y: cur.y + B,
+                   vx: (Math.random() - 0.5) * 1.5, vy: Math.random() * 1.5 + 0.5,
+                   s: 3, t: 0.7, hue: Math.random() * 360 });
   }
   for (const b of stack) if (b.land > 0) b.land = Math.max(0, b.land - 0.12 * dt);
 
@@ -374,12 +443,12 @@ function update(dt){
   }
 }
 
-function drawBlock(x, y, w, hue, glow, land){
+function drawBlock(x, y, w, hue, glow, land, gold){
   const sy = land ? 1 - 0.16 * land : 1;
   const h = B * sy, yy = y + B - h;
   const g = ctx.createLinearGradient(0, yy, 0, yy + h);
-  g.addColorStop(0, 'hsl(' + hue + ',64%,60%)');
-  g.addColorStop(1, 'hsl(' + hue + ',60%,44%)');
+  g.addColorStop(0, 'hsl(' + hue + ',' + (gold ? 90 : 64) + '%,' + (gold ? 64 : 60) + '%)');
+  g.addColorStop(1, 'hsl(' + hue + ',' + (gold ? 85 : 60) + '%,' + (gold ? 48 : 44) + '%)');
   ctx.fillStyle = g;
   if (glow){ ctx.shadowColor = 'hsla(' + hue + ',85%,65%,.85)'; ctx.shadowBlur = 16; }
   ctx.fillRect(x - w / 2, yy, w, h);
@@ -388,6 +457,14 @@ function drawBlock(x, y, w, hue, glow, land){
   ctx.fillRect(x - w / 2, yy, w, 2.5);
   ctx.fillStyle = 'rgba(0,0,0,.2)';
   ctx.fillRect(x - w / 2, yy + h - 2.5, w, 2.5);
+  if (gold){ // moving shine band
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x - w / 2, yy, w, h); ctx.clip();
+    const bx = x - w / 2 + ((performance.now() * 0.12) % (w + 30)) - 15;
+    ctx.globalAlpha = 0.4; ctx.fillStyle = '#fff';
+    ctx.fillRect(bx, yy, 12, h);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
 }
 
 function drawTargetLine(n, col, label){
@@ -407,19 +484,18 @@ function drawTargetLine(n, col, label){
 }
 
 function render(){
-  // sky
-  const bh = (224 + floors * 1.5) % 360;
+  // sky (zone-colored, lerped)
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, 'hsl(' + (bh + 26) % 360 + ',55%,6%)');
-  g.addColorStop(1, 'hsl(' + bh + ',52%,17%)');
+  g.addColorStop(0, 'hsl(' + Math.round((bgH + 26) % 360) + ',' + Math.round(bgS * 0.9) + '%,' + Math.max(4, Math.round(bgL * 0.35)) + '%)');
+  g.addColorStop(1, 'hsl(' + Math.round(bgH) + ',' + Math.round(bgS) + '%,' + Math.round(bgL) + '%)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
-  // stars (parallax)
+  // stars (parallax + twinkle)
   ctx.fillStyle = '#fff';
-  const off = -camY * 0.3, span = H + 80;
+  const off = -camY * 0.3, span = H + 80, tNow = performance.now();
   for (const s of stars){
     const sy = ((s.y * span + off) % span + span) % span - 40;
-    ctx.globalAlpha = s.a;
+    ctx.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(tNow * 0.001 * s.tw + s.x * 40));
     ctx.beginPath(); ctx.arc(s.x * W, sy, s.r, 0, 6.283); ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -454,7 +530,10 @@ function render(){
     ctx.restore();
   }
 
-  if (state === 'play' && cur) drawBlock(cur.x, cur.y - camY, cur.w, cur.hue, true, 0);
+  if (state === 'play' && cur)
+    drawBlock(cur.x, cur.y - camY, cur.w,
+              combo >= 3 ? (performance.now() * 0.12) % 360 : cur.hue, // fever rainbow
+              true, 0, cur.gold);
 
   for (const p of parts){
     if (p.ring){
@@ -488,6 +567,15 @@ function render(){
   }
   ctx.restore();
 
+  // danger vignette (tower critically narrow)
+  if (state === 'play' && stack[stack.length - 1].w < baseW() * 0.32){
+    const a = 0.14 + 0.10 * Math.sin(performance.now() * 0.009);
+    const rg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.8);
+    rg.addColorStop(0, 'rgba(255,40,40,0)');
+    rg.addColorStop(1, 'rgba(255,30,30,' + a.toFixed(3) + ')');
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  }
+
   // screen-space confetti
   for (const c of confettis){
     ctx.save();
@@ -506,7 +594,7 @@ function render(){
 
 let last = performance.now();
 function frame(now){
-  const dt = Math.min(2.5, Math.max(0.25, (now - last) / 16.667));
+  const dt = Math.min(2.5, Math.max(0.25, (now - last) / 16.667)) * timeScale;
   last = now;
   update(dt);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -530,7 +618,12 @@ window.__sky = {
   tap,
   state: () => state,
   floors: () => floors,
+  combo: () => combo,
+  zone: () => zoneIdxOf(floors),
+  topW: () => stack[stack.length - 1].w,
+  gold: () => !!(cur && cur.gold),
   align(){ if (cur) cur.x = stack[stack.length - 1].x; },
+  offset(px){ if (cur) cur.x = stack[stack.length - 1].x + px; },
   miss(){ if (cur) cur.x = stack[stack.length - 1].x + stack[stack.length - 1].w + cur.w; }
 };
 </script>
