@@ -192,24 +192,49 @@ const sOver    = () => tone(300, 0.55, 'sawtooth', 0.16, 80);
 const sFanfare = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.2), i * 95));
 const sGold    = () => { tone(988, 0.07, 'square', 0.16); setTimeout(() => tone(1319, 0.12, 'square', 0.14), 70); };
 const sBoom    = () => { tone(90, 0.45, 'sawtooth', 0.4, 30); tone(420, 0.16, 'square', 0.22, 55); };
-function sMeow(power){ // alpha meow — more power = deeper, longer, mightier
+function sMeow(power){ // alpha meow v2: formant-filtered voice (ee->ah->oo), not a siren
   if (muted) return; const a = ac(); if (!a) return;
   const p = Math.min(10, Math.max(3, power || 3));
   const t = a.currentTime;
-  const f0 = 300 - p * 12, f1 = 520 - p * 18, f2 = Math.max(60, 150 - p * 8);
-  const dur = 0.55 + p * 0.05;
-  [['sawtooth', 0.10 + p * 0.013], ['sine', 0.16 + p * 0.02]].forEach(q => {
-    const o = a.createOscillator(), g = a.createGain();
-    o.type = q[0];
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f1, t + 0.12 + p * 0.008); // me-
-    o.frequency.exponentialRampToValueAtTime(f2, t + dur);              // -ooowww
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(q[1], t + 0.06);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
-    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.1);
-  });
-  setTimeout(() => tone(Math.max(38, 55 - p * 1.5), 0.32, 'sine', Math.min(0.6, 0.4 + p * 0.02), 36), dur * 1000); // bass drop
+  const depth = 1 - (p - 3) * 0.05; // bigger power = deeper voice
+  const dur = 0.45 + p * 0.04;
+  const base = 240 * depth, vol = Math.min(0.85, 0.5 + p * 0.04);
+
+  // voice: saw carrier -> bandpass formant -> amp
+  const o = a.createOscillator(); o.type = 'sawtooth';
+  const f = a.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 4;
+  const g = a.createGain();
+  o.frequency.setValueAtTime(base, t);
+  o.frequency.exponentialRampToValueAtTime(base * 1.7, t + 0.10); // me-
+  o.frequency.setValueAtTime(base * 1.7, t + 0.14);
+  o.frequency.exponentialRampToValueAtTime(base * 0.7, t + dur);  // -ow
+  f.frequency.setValueAtTime(900 * depth, t);                      // 'ee'
+  f.frequency.exponentialRampToValueAtTime(2200 * depth, t + 0.12); // 'ah'
+  f.frequency.exponentialRampToValueAtTime(500 * depth, t + dur);   // 'oo'
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.05);
+  g.gain.setValueAtTime(vol, t + dur * 0.55);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  // vibrato makes it vocal instead of mechanical
+  const v = a.createOscillator(); v.frequency.value = 6.5;
+  const vg = a.createGain(); vg.gain.value = base * 0.04;
+  v.connect(vg); vg.connect(o.frequency);
+  o.connect(f); f.connect(g); g.connect(a.destination);
+  o.start(t); o.stop(t + dur + 0.05); v.start(t); v.stop(t + dur + 0.05);
+
+  // sub layer for chest/body
+  const o2 = a.createOscillator(); o2.type = 'sine';
+  const g2 = a.createGain();
+  o2.frequency.setValueAtTime(base * 0.5, t);
+  o2.frequency.exponentialRampToValueAtTime(base * 0.85, t + 0.10);
+  o2.frequency.exponentialRampToValueAtTime(base * 0.35, t + dur);
+  g2.gain.setValueAtTime(0.0001, t);
+  g2.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.06);
+  g2.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o2.connect(g2); g2.connect(a.destination); o2.start(t); o2.stop(t + dur + 0.05);
+
+  // bass drop only for the big ones (phone-speaker-audible range)
+  if (p >= 7) setTimeout(() => tone(130, 0.35, 'sawtooth', 0.25, 45), dur * 1000);
 }
 const sFever   = () => [440, 587, 880].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sawtooth', 0.14), i * 70));
 function firework(x, y, n){
