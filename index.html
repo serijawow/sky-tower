@@ -47,6 +47,10 @@
     text-shadow:0 2px 12px rgba(255,160,60,.65);animation:pulse .9s infinite}
   #finalZone{font-size:13px;color:#9fb4e8;font-weight:700;margin-bottom:2px}
   .hint{margin-top:12px;font-size:12px;color:#6f7fa8}
+  #mute{position:fixed;top:calc(12px + env(safe-area-inset-top));right:14px;z-index:30;
+    font-size:22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+    background:rgba(20,26,54,.55);border:1px solid rgba(140,170,255,.25);border-radius:50%;
+    cursor:pointer;user-select:none}
   #floors{text-align:center;font-size:64px;font-weight:900;line-height:1;
     text-shadow:0 4px 24px rgba(120,180,255,.45)}
   #hudBest{position:absolute;top:calc(16px + env(safe-area-inset-top));left:16px;
@@ -92,7 +96,7 @@
   <div class="logo">🏯</div>
   <h1>하늘탑</h1>
   <div class="en">SKY TOWER</div>
-  <div class="sub">타이밍 맞춰 탭! 블록을 쌓아<br>하늘 끝까지 올라가 보자</div>
+  <div class="sub">타이밍 맞춰 탭! 퍼펙트 3연속이면<br>🔥피버 — 2층짜리 블록으로 2배 상승!</div>
   <div id="challenge" class="hidden-hard"></div>
   <div id="menuBestWrap" class="hidden-hard">🏆 내 최고 기록 <span id="menuBest">0</span>층</div>
   <div class="tap">👆 화면을 탭해서 시작</div>
@@ -113,6 +117,7 @@
 </div>
 
 <div id="toast"></div>
+<div id="mute">🔊</div>
 
 <script>
 'use strict';
@@ -124,7 +129,7 @@ function resize(){
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  if (state === 'play') camYT = -floors * B - H * 0.62;
+  if (state === 'play') camYT = stack[stack.length - 1].y - H * 0.62;
 }
 window.addEventListener('resize', resize);
 
@@ -169,6 +174,7 @@ function ac(){
   } catch(e){ return null; }
 }
 function tone(f, d, type, vol, f2){
+  if (muted) return;
   const a = ac(); if (!a) return;
   const o = a.createOscillator(), g = a.createGain(), t = a.currentTime;
   o.type = type; o.frequency.setValueAtTime(f, t);
@@ -192,6 +198,39 @@ function firework(x, y, n){
                  s: Math.random() * 4 + 2, t: 1, hue: Math.random() * 360 });
   }
 }
+
+/* ================= bgm (procedural chiptune) ================= */
+let muted = false; try { muted = localStorage.getItem('skytower_mute') === '1'; } catch(e) {}
+let bgmOn = false, bgmTimer = null, bgmNext = 0, bgmStep = 0;
+const BASS = [110, 0, 110, 0, 82.41, 0, 98, 0, 110, 0, 110, 0, 130.81, 0, 98, 0];
+const LEAD = [440, 523.25, 659.25, 880, 0, 659.25, 523.25, 0, 440, 523.25, 659.25, 783.99, 880, 0, 1046.5, 0];
+function note(f, t, d, type, vol){
+  const a = ac(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + 0.02);
+}
+function bgmTick(){
+  const a = ac(); if (!a || !bgmOn) return;
+  const fever = combo >= 3, spb = fever ? 0.10 : 0.13; // step length: fever speeds music up
+  if (bgmNext < a.currentTime) bgmNext = a.currentTime + 0.02;
+  while (bgmNext < a.currentTime + 0.18){
+    const i = bgmStep % 16;
+    if (!muted){
+      if (BASS[i]) note(BASS[i], bgmNext, spb * 0.9, 'square', 0.04);
+      if (LEAD[i]) note(LEAD[i] * (fever ? 2 : 1), bgmNext, spb * 0.85, 'triangle', fever ? 0.05 : 0.035);
+    }
+    bgmNext += spb; bgmStep++;
+  }
+}
+function bgmStart(){ const a = ac(); if (!a) return; bgmOn = true; bgmNext = a.currentTime + 0.05; bgmStep = 0; if (!bgmTimer) bgmTimer = setInterval(bgmTick, 40); }
+function bgmStop(){ bgmOn = false; if (bgmTimer){ clearInterval(bgmTimer); bgmTimer = null; } }
+document.addEventListener('visibilitychange', () => {
+  if (!AC) return;
+  if (document.hidden) AC.suspend(); else if (state === 'play') AC.resume();
+});
 
 /* ================= helpers ================= */
 function setBestUI(){
@@ -225,7 +264,7 @@ function toast(m){
 
 /* ================= game flow ================= */
 function reset(){
-  stack = [{ x: W / 2, y: 0, w: baseW(), hue: 205, land: 0 }];
+  stack = [{ x: W / 2, y: 0, w: baseW(), hue: 205, land: 0, bh: B }];
   debris = []; parts = []; floats = []; confettis = [];
   floors = 0; combo = 0; newRec = false; beatChall = false;
   curZone = 0; timeScale = 1;
@@ -239,11 +278,12 @@ function spawn(){
   const spd = (Math.min(2.4 + floors * 0.055, 7) + (combo >= 3 ? 0.6 : 0)) * (W < 420 ? 0.95 : 1);
   const dir = Math.random() < 0.5 ? 1 : -1;
   const gold = L > 0 && L % 10 === 0;
-  cur = { x: W / 2 - dir * range, y: -L * B, w: top.w,
-          dir, spd, range, gold, hue: gold ? 46 : (205 + L * 6) % 360 };
+  const bh = combo >= 3 ? B * 2 : B; // fever drops double-height blocks = +2 floors each
+  cur = { x: W / 2 - dir * range, y: top.y - bh, w: top.w,
+          dir, spd, range, gold, bh, hue: gold ? 46 : (205 + L * 6) % 360 };
 }
 function start(){
-  ac();
+  ac(); bgmStart();
   reset(); spawn(); state = 'play';
   $('menu').classList.add('hidden');
   $('over').classList.add('hidden');
@@ -260,7 +300,7 @@ function drop(){
 
   if (ov <= 0){ // complete miss → game over
     debris.push({ x: cur.x, y: cur.y, w: cur.w, vy: -1.5, rot: 0,
-                  vr: (dx > 0 ? 1 : -1) * 0.05, hue: cur.hue });
+                  vr: (dx > 0 ? 1 : -1) * 0.05, hue: cur.hue, bh: cur.bh });
     cur = null;
     die();
     return;
@@ -271,7 +311,7 @@ function drop(){
     const fever = combo >= 3;
     cur.x = top.x;
     cur.w = cur.gold ? baseW() : Math.min(cur.w + (fever ? 12 : GROW), baseW());
-    ring(cur.x, cur.y + B / 2, cur.hue);
+    ring(cur.x, cur.y + cur.bh / 2, cur.hue);
     if (cur.gold){
       floatTxt(cur.x, cur.y - 14, '💰 GOLDEN PERFECT!', '#ffd76b', 22);
       firework(cur.x, cur.y, 26); sGold();
@@ -287,7 +327,7 @@ function drop(){
     const pw = cur.w - ov;
     const px = dx > 0 ? R + pw / 2 : L - pw / 2;
     debris.push({ x: px, y: cur.y, w: pw, vy: -1.2, rot: 0,
-                  vr: (dx > 0 ? 1 : -1) * 0.06, hue: cur.hue });
+                  vr: (dx > 0 ? 1 : -1) * 0.06, hue: cur.hue, bh: cur.bh });
     chips(dx > 0 ? R : L, cur.y, cur.hue);
     cur.x = (L + R) / 2; cur.w = ov;
     if (cur.gold){
@@ -300,10 +340,11 @@ function drop(){
     if (cur.w < baseW() * 0.32) tone(110, 0.18, 'triangle', 0.4, 55); // danger thump
   }
 
-  stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1 });
-  floors = stack.length - 1;
+  stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1, bh: cur.bh });
+  floors += cur.bh / B; // double blocks count double
+  if (cur.bh > B) floatTxt(cur.x + cur.w / 2 + 28, cur.y + cur.bh / 2, '+2층!', '#ffd76b', 16);
   $('floors').textContent = floors;
-  $('combo').textContent = '🔥 PERFECT x' + combo;
+  $('combo').textContent = combo >= 3 ? '🔥 FEVER x' + combo : '🔥 PERFECT x' + combo;
   $('combo').classList.toggle('hidden-hard', combo < 2);
 
   if (challenge > 0 && !beatChall && floors > challenge){
@@ -320,11 +361,11 @@ function drop(){
     }
   }
 
-  camYT = -floors * B - H * 0.62;
+  camYT = cur.y - H * 0.62;
   spawn();
 }
 function die(){
-  state = 'dying'; shake = 12; timeScale = 0.3; sOver(); // slow-mo drama
+  state = 'dying'; shake = 12; timeScale = 0.3; bgmStop(); sOver(); // slow-mo drama
   if (floors > best){
     best = floors; newRec = true;
     try { localStorage.setItem('skytower_best', best); } catch(e) {}
@@ -384,9 +425,16 @@ function tap(){
   else if (state === 'over' && performance.now() - overAt > 1200) start(); // quick retry
 }
 window.addEventListener('pointerdown', e => {
-  if (e.target.closest('button') || e.target.closest('.panel')) return;
+  if (e.target.closest('button') || e.target.closest('.panel') || e.target.closest('#mute')) return;
   tap();
 });
+$('mute').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  muted = !muted;
+  try { localStorage.setItem('skytower_mute', muted ? '1' : '0'); } catch(err) {}
+  $('mute').textContent = muted ? '🔇' : '🔊';
+});
+$('mute').textContent = muted ? '🔇' : '🔊';
 window.addEventListener('keydown', e => {
   if (e.code === 'Space' || e.code === 'Enter'){ e.preventDefault(); tap(); }
 });
@@ -443,9 +491,10 @@ function update(dt){
   }
 }
 
-function drawBlock(x, y, w, hue, glow, land, gold){
+function drawBlock(x, y, w, hue, glow, land, gold, bh){
+  const hpx = bh || B;
   const sy = land ? 1 - 0.16 * land : 1;
-  const h = B * sy, yy = y + B - h;
+  const h = hpx * sy, yy = y + hpx - h;
   const g = ctx.createLinearGradient(0, yy, 0, yy + h);
   g.addColorStop(0, 'hsl(' + hue + ',' + (gold ? 90 : 64) + '%,' + (gold ? 64 : 60) + '%)');
   g.addColorStop(1, 'hsl(' + hue + ',' + (gold ? 85 : 60) + '%,' + (gold ? 48 : 44) + '%)');
@@ -517,7 +566,7 @@ function render(){
       ctx.fillRect(b.x - b.w / 2, y, b.w, 2.5);
       continue;
     }
-    drawBlock(b.x, y, b.w, b.hue, false, b.land);
+    drawBlock(b.x, y, b.w, b.hue, false, b.land, false, b.bh);
   }
 
   drawTargetLine(challenge, '#ffa94d', '🔥 친구');
@@ -525,15 +574,15 @@ function render(){
 
   for (const d of debris){
     ctx.save();
-    ctx.translate(d.x, d.y - camY + B / 2); ctx.rotate(d.rot);
-    drawBlock(0, -B / 2, d.w, d.hue, false, 0);
+    ctx.translate(d.x, d.y - camY + (d.bh || B) / 2); ctx.rotate(d.rot);
+    drawBlock(0, -(d.bh || B) / 2, d.w, d.hue, false, 0, false, d.bh);
     ctx.restore();
   }
 
   if (state === 'play' && cur)
     drawBlock(cur.x, cur.y - camY, cur.w,
               combo >= 3 ? (performance.now() * 0.12) % 360 : cur.hue, // fever rainbow
-              true, 0, cur.gold);
+              true, 0, cur.gold, cur.bh);
 
   for (const p of parts){
     if (p.ring){
