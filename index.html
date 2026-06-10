@@ -325,6 +325,7 @@ function spawn(){
   const bh = !bomb && !cat && combo >= 3 ? B * 2 : B; // fever drops double-height blocks
   cur = { x: W / 2 - dir * range, y: top.y - bh, w: top.w,
           dir, spd, range, gold, bomb, cat, bh,
+          wasBomb: bomb, wasCat: cat, // each special shows at most once per block
           hue: bomb ? 4 : gold ? 46 : (205 + L * 6) % 360 };
 }
 function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessings
@@ -594,8 +595,9 @@ function update(dt){
 
   if (state === 'play' && cur){
     cur.x += cur.dir * cur.spd * dt;
-    if (cur.bomb || cur.cat){ // one fast pass; off the wall it becomes a normal block
+    if (cur.bomb || cur.cat){ // special pass; at the wall it may flip to the OTHER special (once each)
       if ((cur.dir > 0 && cur.x > W / 2 + cur.range) || (cur.dir < 0 && cur.x < W / 2 - cur.range)){
+        const wasJustBomb = cur.bomb;
         if (cur.bomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
         else {
           nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
@@ -604,9 +606,17 @@ function update(dt){
         cur.x = cur.dir > 0 ? W / 2 + cur.range : W / 2 - cur.range;
         cur.dir = -cur.dir;
         cur.bomb = false; cur.cat = false;
-        cur.spd /= 1.8; // back to normal pace
-        cur.hue = (205 + stack.length * 6) % 360;
-        if (combo >= 3){ cur.bh = B * 2; cur.y = stack[stack.length - 1].y - B * 2; } // honor active fever
+        if (wasJustBomb && !cur.wasCat && Math.random() < 0.5){ // bomb sneaks back as a cat
+          cur.cat = true; cur.wasCat = true;
+          floatTxt(cur.x, cur.y - 16, '!?', '#ffd76b', 18);
+        } else if (!wasJustBomb && !cur.wasBomb && Math.random() < 0.5){ // cat sneaks back as a bomb
+          cur.bomb = true; cur.wasBomb = true;
+          floatTxt(cur.x, cur.y - 16, '!?', '#ff8d7a', 18);
+        } else { // settle into a normal block (normal blocks never turn special)
+          cur.spd /= 1.8;
+          cur.hue = (205 + stack.length * 6) % 360;
+          if (combo >= 3){ cur.bh = B * 2; cur.y = stack[stack.length - 1].y - B * 2; } // honor active fever
+        }
       }
     } else {
       if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; }
@@ -879,8 +889,8 @@ window.__sky = {
   nextBomb: () => nextBombAt,
   curW: () => cur ? Math.round(cur.w) : 0,
   bless(r){ blessing(r); },
-  makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
-  makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
+  makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.wasBomb = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
+  makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.wasCat = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
 };
 </script>
 </body>
