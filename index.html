@@ -341,12 +341,17 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
     firework(top0.x, top0.y, 16); flash = 0.4;
     sMeow();
     spawn();
-  } else if (roll < 0.5){ // 2) instant fever infection
+  } else if (roll < 0.5){ // 2) instant fever infection — cat stacks one block to kick it off
+    stack.push({ x: top0.x, y: top0.y - B, w: top0.w, hue: (205 + stack.length * 6) % 360,
+                 land: 1.4, bh: B });
+    floors++; $('floors').textContent = floors;
+    camYT = stack[stack.length - 1].y - H * 0.62;
     combo = Math.max(combo, 5);
     $('combo').textContent = '🔥 FEVER x' + combo;
     $('combo').classList.remove('hidden-hard');
-    floatTxt(top0.x, top0.y - 30, '😼🔥 알파 피버 전염!!', '#ff9d4d', 22);
-    firework(top0.x, top0.y, 16); flash = 0.4;
+    floatTxt(top0.x, top0.y - B - 30, '😼🔥 알파 피버 전염!! +1층', '#ff9d4d', 22);
+    firework(top0.x, top0.y - B, 16); flash = 0.4;
+    tone(330, 0.07, 'square', 0.14);
     sMeow();
     spawn();
   } else { // 3) KWANG KWANG KWANG — 3..10 floors slam down, meow scales with count
@@ -457,7 +462,7 @@ function drop(){
     cur.x = (L + R) / 2; cur.w = ov;
     if (cur.gold){
       cur.w = Math.min(ov + 22, baseW());
-      floatTxt(cur.x, cur.y - 14, '💰 골드 보너스!', '#ffd76b', 18);
+      floatTxt(cur.x, cur.y - 14, '💰 너비 +22 회복!', '#ffd76b', 18);
       sGold();
     }
     shake = Math.max(shake, 3);
