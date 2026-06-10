@@ -155,7 +155,7 @@ let stack = [], cur = null, debris = [], parts = [], floats = [], confettis = []
 let floors = 0, combo = 0, best = 0, newRec = false, beatChall = false, flash = 0;
 let camY = 0, camYT = 0, zoom = 1, zoomT = 1, shake = 0;
 let bgH = 224, bgS = 52, bgL = 17, curZone = 0, timeScale = 1, overAt = 0, tick = 0;
-let nextBombAt = 8, nextCatAt = 12, boomFlash = 0;
+let nextBombAt = 8, nextCatAt = 12;
 try { best = +localStorage.getItem('skytower_best') || 0; } catch(e) {}
 
 const challenge = Math.max(0, parseInt(new URLSearchParams(location.search).get('s'), 10) || 0);
@@ -192,13 +192,10 @@ const sOver    = () => tone(300, 0.55, 'sawtooth', 0.16, 80);
 const sFanfare = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.16, 'triangle', 0.2), i * 95));
 const sGold    = () => { tone(988, 0.07, 'square', 0.16); setTimeout(() => tone(1319, 0.12, 'square', 0.14), 70); };
 const sBoom    = () => { tone(90, 0.45, 'sawtooth', 0.4, 30); tone(420, 0.16, 'square', 0.22, 55); };
-function sMeow(power){ // alpha meow v2: formant-filtered voice (ee->ah->oo), not a siren
+function sMeow(){ // the one true alpha meow: formant-filtered voice (ee->ah->oo)
   if (muted) return; const a = ac(); if (!a) return;
-  const p = Math.min(10, Math.max(3, power || 3));
   const t = a.currentTime;
-  const depth = 1 - (p - 3) * 0.05; // bigger power = deeper voice
-  const dur = 0.45 + p * 0.04;
-  const base = 240 * depth, vol = Math.min(0.85, 0.5 + p * 0.04);
+  const dur = 0.57, base = 240, vol = 0.62;
 
   // voice: saw carrier -> bandpass formant -> amp
   const o = a.createOscillator(); o.type = 'sawtooth';
@@ -208,9 +205,9 @@ function sMeow(power){ // alpha meow v2: formant-filtered voice (ee->ah->oo), no
   o.frequency.exponentialRampToValueAtTime(base * 1.7, t + 0.10); // me-
   o.frequency.setValueAtTime(base * 1.7, t + 0.14);
   o.frequency.exponentialRampToValueAtTime(base * 0.7, t + dur);  // -ow
-  f.frequency.setValueAtTime(900 * depth, t);                      // 'ee'
-  f.frequency.exponentialRampToValueAtTime(2200 * depth, t + 0.12); // 'ah'
-  f.frequency.exponentialRampToValueAtTime(500 * depth, t + dur);   // 'oo'
+  f.frequency.setValueAtTime(900, t);                       // 'ee'
+  f.frequency.exponentialRampToValueAtTime(2200, t + 0.12); // 'ah'
+  f.frequency.exponentialRampToValueAtTime(500, t + dur);   // 'oo'
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(vol, t + 0.05);
   g.gain.setValueAtTime(vol, t + dur * 0.55);
@@ -232,9 +229,6 @@ function sMeow(power){ // alpha meow v2: formant-filtered voice (ee->ah->oo), no
   g2.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.06);
   g2.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o2.connect(g2); g2.connect(a.destination); o2.start(t); o2.stop(t + dur + 0.05);
-
-  // bass drop only for the big ones (phone-speaker-audible range)
-  if (p >= 7) setTimeout(() => tone(130, 0.35, 'sawtooth', 0.25, 45), dur * 1000);
 }
 const sFever   = () => [440, 587, 880].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'sawtooth', 0.14), i * 70));
 function firework(x, y, n){
@@ -314,7 +308,7 @@ function reset(){
   debris = []; parts = []; floats = []; confettis = [];
   floors = 0; combo = 0; newRec = false; beatChall = false;
   curZone = 0; timeScale = 1;
-  nextBombAt = 8 + Math.floor(Math.random() * 5); nextCatAt = 12 + Math.floor(Math.random() * 7); boomFlash = 0;
+  nextBombAt = 8 + Math.floor(Math.random() * 5); nextCatAt = 12 + Math.floor(Math.random() * 7);
   camYT = -H * 0.62; camY = camYT; zoom = 1; zoomT = 1; shake = 0;
   $('floors').textContent = '0';
   $('combo').classList.add('hidden-hard');
@@ -345,7 +339,7 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
     top0.w = baseW(); top0.land = 1.4;
     floatTxt(top0.x, top0.y - 30, '😼 몸집 복구 냥!! 풀사이즈', '#ffd76b', 21);
     firework(top0.x, top0.y, 16); flash = 0.4;
-    sMeow(4);
+    sMeow();
     spawn();
   } else if (roll < 0.5){ // 2) instant fever infection
     combo = Math.max(combo, 5);
@@ -353,7 +347,7 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
     $('combo').classList.remove('hidden-hard');
     floatTxt(top0.x, top0.y - 30, '😼🔥 알파 피버 전염!!', '#ff9d4d', 22);
     firework(top0.x, top0.y, 16); flash = 0.4;
-    sMeow(5);
+    sMeow();
     spawn();
   } else { // 3) KWANG KWANG KWANG — 3..10 floors slam down, meow scales with count
     const n = 3 + Math.floor(Math.random() * 8);
@@ -369,17 +363,17 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
         tone(180, 0.06, 'square', 0.12);
         chips(t2.x - t2.w / 2, t2.y - B, 46, 3); chips(t2.x + t2.w / 2, t2.y - B, 46, 3);
         camYT = stack[stack.length - 1].y - H * 0.62;
-        if (i === n - 1){ // finale: deeper meow for more slams
-          floatTxt(t2.x, t2.y - 56, '쾅쾅쾅!! +' + n + '층', '#ffd76b', 25);
+        if (i === n - 1){ // finale
+          floatTxt(t2.x, t2.y - 56, '😼 +' + n + '층!', '#ffd76b', 25);
           firework(t2.x, t2.y - 20, 22); flash = 0.5;
-          sMeow(n);
+          sMeow();
           spawn();
         }
       }, 200 + i * 160);
     }
   }
 }
-function explode(){ // tapped the bomb: blow the top 2 floors off
+function explode(){ // tapped the bomb: top floors crumble, smoke, fade away
   const bx = cur.x, by = cur.y;
   cur = null;
   let lost = 0;
@@ -387,16 +381,27 @@ function explode(){ // tapped the bomb: blow the top 2 floors off
   const preFloors = floors; // bomb grace: nothing until you reclaim your peak
   while (stack.length > 1 && lost < target){
     const b = stack.pop();
-    debris.push({ x: b.x, y: b.y, w: b.w, vx: (Math.random() - 0.5) * 9, vy: -3 - Math.random() * 2.5,
-                  rot: 0, vr: (Math.random() - 0.5) * 0.25, hue: b.hue, bh: b.bh });
+    for (let i = -1; i <= 1; i++) // each block shatters into 3 fading chunks
+      debris.push({ x: b.x + i * b.w / 3, y: b.y, w: Math.max(6, b.w / 3 - 2),
+                    vx: i * (1.5 + Math.random() * 2) + (Math.random() - 0.5),
+                    vy: -1 - Math.random() * 2.5,
+                    rot: 0, vr: (Math.random() - 0.5) * 0.3,
+                    hue: b.hue, bh: b.bh, t: 1 });
+    parts.push({ smoke: true, x: b.x + (Math.random() - 0.5) * b.w * 0.6, y: b.y,
+                 vx: (Math.random() - 0.5) * 0.8, vy: -0.4 - Math.random() * 0.8,
+                 r: 8 + Math.random() * 10, t: 1 });
     lost += b.bh / B;
   }
+  for (let i = 0; i < 8; i++) // smoke plume at the blast point
+    parts.push({ smoke: true, x: bx + (Math.random() - 0.5) * 120, y: by + Math.random() * 60,
+                 vx: (Math.random() - 0.5) * 1, vy: -0.5 - Math.random() * 1,
+                 r: 10 + Math.random() * 14, t: 1 });
   floors = Math.max(0, floors - lost);
   $('floors').textContent = floors;
   combo = 0; $('combo').classList.add('hidden-hard');
-  boomFlash = 0.8; shake = 16;
-  firework(bx, by, 30); chips(bx, by, 4, 14);
-  floatTxt(bx, by - 30, '💥 펑!! -' + lost + '층', '#ff6b5e', 26);
+  shake = 10;
+  chips(bx, by, 4, 10);
+  floatTxt(bx, by - 30, '💥 펑!! -' + lost + '층', '#ff6b5e', 22);
   sBoom();
   camYT = stack[stack.length - 1].y - H * 0.62;
   nextBombAt = preFloors + 11 + Math.floor(Math.random() * 8); // grace past previous peak
@@ -574,7 +579,6 @@ function update(dt){
   zoom += (zoomT - zoom) * lerpK(0.09, dt);
   shake *= Math.pow(0.86, dt);
   flash *= Math.pow(0.85, dt);
-  boomFlash *= Math.pow(0.86, dt);
 
   const zt = ZONES[zoneIdxOf(floors)];
   bgH = lerpHue(bgH, zt.h, lerpK(0.02, dt));
@@ -607,11 +611,13 @@ function update(dt){
   for (let i = debris.length - 1; i >= 0; i--){
     const d = debris[i];
     d.vy += 0.55 * dt; d.y += d.vy * dt; d.x += (d.vx || 0) * dt; d.rot += d.vr * dt;
+    if (d.t !== undefined){ d.t -= 0.022 * dt; if (d.t <= 0){ debris.splice(i, 1); continue; } }
     if (d.y - camY > H / Math.min(zoom, 1) + 400) debris.splice(i, 1);
   }
   for (let i = parts.length - 1; i >= 0; i--){
     const p = parts[i];
     if (p.ring){ p.r += p.vr * dt; p.t -= 0.045 * dt; }
+    else if (p.smoke){ p.x += p.vx * dt; p.y += p.vy * dt; p.r += 0.45 * dt; p.t -= 0.016 * dt; }
     else { p.vy += 0.3 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.t -= 0.03 * dt; }
     if (p.t <= 0) parts.splice(i, 1);
   }
@@ -748,6 +754,7 @@ function render(){
 
   for (const d of debris){
     ctx.save();
+    if (d.t !== undefined) ctx.globalAlpha = Math.max(0, d.t); // shattered chunks fade out
     ctx.translate(d.x, d.y - camY + (d.bh || B) / 2); ctx.rotate(d.rot);
     drawBlock(0, -(d.bh || B) / 2, d.w, d.hue, false, 0, false, d.bh);
     ctx.restore();
@@ -762,7 +769,11 @@ function render(){
   }
 
   for (const p of parts){
-    if (p.ring){
+    if (p.smoke){
+      ctx.globalAlpha = Math.max(0, p.t) * 0.4;
+      ctx.fillStyle = '#a8aeb8';
+      ctx.beginPath(); ctx.arc(p.x, p.y - camY, p.r, 0, 6.283); ctx.fill();
+    } else if (p.ring){
       ctx.globalAlpha = Math.max(0, p.t);
       ctx.strokeStyle = 'hsl(' + p.hue + ',90%,72%)'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(p.x, p.y - camY, p.r, 0, 6.283); ctx.stroke();
@@ -814,11 +825,6 @@ function render(){
   if (flash > 0.02){
     ctx.globalAlpha = flash * 0.25;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
-  }
-  if (boomFlash > 0.02){
-    ctx.globalAlpha = boomFlash * 0.3;
-    ctx.fillStyle = '#ff2a1a'; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
   }
 }
