@@ -384,6 +384,7 @@ function explode(){ // tapped the bomb: top floors crumble, smoke, fade away
   let lost = 0;
   const target = Math.min(10, Math.max(3, Math.ceil(floors * 0.25))); // scales with tower height
   const preFloors = floors; // bomb grace: nothing until you reclaim your peak
+  const preW = stack[stack.length - 1].w; // remember the pre-blast top width
   while (stack.length > 1 && lost < target){
     const b = stack.pop();
     for (let i = -1; i <= 1; i++) // each block shatters into 3 fading chunks
@@ -411,6 +412,7 @@ function explode(){ // tapped the bomb: top floors crumble, smoke, fade away
   camYT = stack[stack.length - 1].y - H * 0.62;
   nextBombAt = preFloors + 11 + Math.floor(Math.random() * 8); // grace past previous peak
   spawn();
+  cur.w = preW; // next block keeps the narrow pre-explosion width — no silver lining
 }
 function start(){
   ac(); bgmStart();
@@ -870,6 +872,7 @@ window.__sky = {
   bomb: () => !!(cur && cur.bomb),
   cat: () => !!(cur && cur.cat),
   nextBomb: () => nextBombAt,
+  curW: () => cur ? Math.round(cur.w) : 0,
   bless(r){ blessing(r); },
   makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
   makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
