@@ -282,28 +282,28 @@ function noise(t, dur, hpf, vol){ // claps / hi-hats
 function coin(t){ note(987.77, t, 0.05, 'square', 0.05); note(1318.51, t + 0.05, 0.07, 'square', 0.05); } // arcade chirp
 function bgmTick(){
   const a = ac(); if (!a || !bgmOn) return;
-  const fever = combo >= 3, spb = fever ? 0.086 : 0.097;
+  const fever = combo >= 3, spb = 0.097; // same tempo in fever — only the arrangement changes (not speed)
   if (bgmNext < a.currentTime) bgmNext = a.currentTime + 0.02;
   while (bgmNext < a.currentTime + 0.2){
     const step = bgmStep % 64, bar = (step / 16) | 0, i = step % 16;
     const root = PROG[bar], t = bgmNext;
     if (!muted){
       if (fever){
-        // FEVER = club drop: pounding beat + bass + offbeat stabs, melody drops out (cool club vibe)
+        // FEVER = burning club beat: no melody, gritty driving bass + beat (same tempo, hotter feel)
         if (i % 4 === 0) kick(t);
-        note(i % 2 ? root : root / 2, t, spb * 0.8, 'square', 0.075);        // relentless rolling bass
-        if (i === 4 || i === 12) noise(t, 0.07, 1100, 0.15);                 // clap on 2 & 4
-        if (i % 4 === 2) noise(t, 0.018, 9000, 0.022);                       // tight offbeat hat
+        note(i % 2 ? root : root / 2, t, spb * 0.8, 'sawtooth', 0.07);       // gritty driving bass
+        if (i === 4 || i === 12) noise(t, 0.05, 1000, 0.10);                 // softer clap on 2 & 4
+        if (i % 4 === 2) noise(t, 0.016, 9000, 0.02);                        // tight offbeat hat
         if (i % 4 === 2) note(root * 2, t, spb * 0.85, 'sawtooth', 0.075);   // hypnotic offbeat club stab
         if (i === 0) note(root, t, spb * 1.5, 'sawtooth', 0.05);             // downbeat anchor
       } else {
-        // NORMAL = bright melodic build: verse motif -> chorus hook
+        // NORMAL = bright rainbow-ish melodic build: verse motif -> chorus hook
         const section = ((bgmStep / 16) | 0) % 8;
         if (i % 4 === 0) kick(t);
         note(i % 2 ? root : root / 2, t, spb * 0.85, 'square', 0.05);        // rolling octave-bounce bass
         if (i === 0) note(root * 2, t, spb * 2, 'sawtooth', 0.04);           // chord stab
-        if (section >= 2 && i % 2 === 1) noise(t, 0.02, 8000, 0.022);        // hi-hat offbeats (quiet)
-        if (section >= 4 && (i === 4 || i === 12)) noise(t, 0.07, 1200, 0.13); // clap on 2 & 4
+        if (section >= 2 && i % 2 === 1) noise(t, 0.018, 8500, 0.018);       // hi-hat offbeats (soft)
+        if (section >= 4 && (i === 4 || i === 12)) noise(t, 0.05, 1000, 0.085); // softer clap on 2 & 4
         if (section >= 4){ const n = HOOK[step]; if (n) note(n, t, spb * 0.9, 'triangle', 0.08); } // chorus hook
         else { const n = MOTIF[i]; if (n) note(n, t, spb * 0.9, 'triangle', 0.06); }               // verse motif
         if (section >= 6 && (i === 6 || i === 14)) coin(t);                  // ear-candy chirps
@@ -361,7 +361,9 @@ function reset(){
   $('floors').textContent = '0';
   $('combo').classList.add('hidden-hard');
 }
-function feverBH(){ return combo >= 3 ? B * Math.min(combo - 2, 4) : B; } // fever floors ramp 1,2,3,4,4...
+// fever tier ramps 1,2,2,3,3,3,4,4,4,4… (each tier h appears h times) — gentler, lasts longer
+function feverTier(){ return combo >= 3 ? Math.min(4, Math.ceil((Math.sqrt(8 * (combo - 2) + 1) - 1) / 2)) : 1; }
+function feverBH(){ return B * feverTier(); }
 function spawn(){
   const L = stack.length, top = stack[L - 1];
   const range = baseW() / 2 + Math.min(W * 0.2, 110);
@@ -370,11 +372,11 @@ function spawn(){
   // during fever, specials get a small extra chance to appear early
   const bomb = !gold && floors >= 6 && (floors >= nextBombAt || (fev && Math.random() < 0.06));
   const cat  = !gold && !bomb && floors >= 10 && (floors >= nextCatAt || (fev && Math.random() < 0.06));
-  const feverIdx = fev ? combo - 2 : 0;
-  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.30, 3.8)) * (W < 420 ? 0.95 : 1);
+  const tier = feverTier(); // 1 (no fever) .. 4
+  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + (tier - 1) * 0.5) * (W < 420 ? 0.95 : 1); // gentler early-fever speed
   if (bomb || cat) spd *= 1.8; // specials zip past in one fast pass — read fast!
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const bh = (!bomb && !cat) ? feverBH() : B; // fever blocks grow taller each step (1→2→3→4)
+  const bh = (!bomb && !cat) ? B * tier : B; // fever floors ramp 1,2,2,3,3,3,4,4,4,4
   camXT = top.x; // the view follows the tower's lean
   cur = { x: top.x - dir * range, y: top.y - bh, w: top.w, cx: top.x, // oscillate around the tower top, not screen center
           dir, spd, range, gold, bomb, cat, bh,
@@ -424,7 +426,7 @@ function blessing(forcedRoll){ // caught the alpha cat: land it at the matched p
     floors++; $('floors').textContent = floors;
     camYT = stack[stack.length - 1].y - H * 0.62;
     checkBeat(top0.x, top0.y - B - 10);
-    combo = Math.max(combo, 6); // jump straight to MAX-height fever (4-floor blocks); never a downgrade
+    combo = Math.max(combo, 9); // jump straight to MAX tier-4 fever (4-floor blocks); never a downgrade
     $('combo').textContent = '🔥 FEVER x' + combo;
     $('combo').classList.remove('hidden-hard');
     floatTxt(top0.x, top0.y - B - 30, '😼🔥 알파 피버 MAX!!', '#ff9d4d', 22);
