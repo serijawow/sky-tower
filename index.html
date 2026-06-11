@@ -315,19 +315,23 @@ function reset(){
   $('floors').textContent = '0';
   $('combo').classList.add('hidden-hard');
 }
+function feverBH(){ return combo >= 3 ? B * Math.min(combo - 2, 4) : B; } // fever floors ramp 1,2,3,4,4...
 function spawn(){
   const L = stack.length, top = stack[L - 1];
   const range = baseW() / 2 + Math.min(W * 0.2, 110);
   const gold = L > 0 && L % 10 === 0;
-  const bomb = !gold && floors >= 6 && floors >= nextBombAt; // trap: do NOT tap this one
-  const cat  = !gold && !bomb && floors >= 10 && floors >= nextCatAt; // alpha cat: DO tap this one
-  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + (combo >= 3 ? 0.6 : 0)) * (W < 420 ? 0.95 : 1);
+  const fev = combo >= 3;
+  // during fever, specials get a small extra chance to appear early
+  const bomb = !gold && floors >= 6 && (floors >= nextBombAt || (fev && Math.random() < 0.06));
+  const cat  = !gold && !bomb && floors >= 10 && (floors >= nextCatAt || (fev && Math.random() < 0.06));
+  const feverIdx = fev ? combo - 2 : 0;
+  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.45, 4.5)) * (W < 420 ? 0.95 : 1);
   if (bomb || cat) spd *= 1.8; // specials zip past in one fast pass — read fast!
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const bh = !bomb && !cat && combo >= 3 ? B * 2 : B; // fever drops double-height blocks
+  const bh = (!bomb && !cat) ? feverBH() : B; // fever blocks grow taller each step (1→2→3→4)
   cur = { x: W / 2 - dir * range, y: top.y - bh, w: top.w,
           dir, spd, range, gold, bomb, cat, bh,
-          wasBomb: bomb, wasCat: cat, // each special shows at most once per block
+          specials: (bomb || cat) ? 1 : 0, catUsed: cat, // ≤2 special passes; cat once, bomb may repeat
           hue: bomb ? 4 : gold ? 46 : (205 + L * 6) % 360 };
 }
 function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessings
@@ -485,7 +489,7 @@ function drop(){
   cur.x = fitX(cur.x, cur.w); // never let a (re)grown block hang off screen
   stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1, bh: cur.bh });
   floors += cur.bh / B; // double blocks count double
-  if (cur.bh > B) floatTxt(cur.x + cur.w / 2 + 28, cur.y + cur.bh / 2, '+2층!', '#ffd76b', 16);
+  if (cur.bh > B) floatTxt(cur.x + cur.w / 2 + 28, cur.y + cur.bh / 2, '+' + (cur.bh / B) + '층!', '#ffd76b', 16);
   $('floors').textContent = floors;
   $('combo').textContent = combo >= 3 ? '🔥 FEVER x' + combo : '🔥 PERFECT x' + combo;
   $('combo').classList.toggle('hidden-hard', combo < 2);
@@ -611,10 +615,10 @@ function update(dt){
 
   if (state === 'play' && cur){
     cur.x += cur.dir * cur.spd * dt;
-    if (cur.bomb || cur.cat){ // special pass; at the wall it may flip to the OTHER special (once each)
+    if (cur.bomb || cur.cat){ // special pass; at the wall it may flip again (bomb can repeat, cat once)
       if ((cur.dir > 0 && cur.x > W / 2 + cur.range) || (cur.dir < 0 && cur.x < W / 2 - cur.range)){
-        const wasJustBomb = cur.bomb;
-        if (cur.bomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
+        const wasBomb = cur.bomb;
+        if (wasBomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
         else {
           nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
           floatTxt(W / 2, stack[stack.length - 1].y - 60, '😼 …시크하게 지나갔다', '#9fb4e8', 14);
@@ -622,34 +626,46 @@ function update(dt){
         cur.x = cur.dir > 0 ? W / 2 + cur.range : W / 2 - cur.range;
         cur.dir = -cur.dir;
         cur.bomb = false; cur.cat = false;
-        if (wasJustBomb && !cur.wasCat && Math.random() < 0.5){ // bomb sneaks back as a cat
-          cur.cat = true; cur.wasCat = true;
+        const r = Math.random();
+        if (cur.specials < 2 && wasBomb && r < 0.40){ // bomb → bomb (can appear twice)
+          cur.bomb = true; cur.specials++;
+          floatTxt(cur.x, cur.y - 16, '!?', '#ff8d7a', 18);
+        } else if (cur.specials < 2 && wasBomb && !cur.catUsed && r < 0.70){ // bomb → cat
+          cur.cat = true; cur.catUsed = true; cur.specials++;
           floatTxt(cur.x, cur.y - 16, '!?', '#ffd76b', 18);
-        } else if (!wasJustBomb && !cur.wasBomb && Math.random() < 0.5){ // cat sneaks back as a bomb
-          cur.bomb = true; cur.wasBomb = true;
+        } else if (cur.specials < 2 && !wasBomb && r < 0.50){ // cat → bomb
+          cur.bomb = true; cur.specials++;
           floatTxt(cur.x, cur.y - 16, '!?', '#ff8d7a', 18);
         } else { // settle into a normal block (normal blocks never turn special)
           cur.spd /= 1.8;
           cur.hue = (205 + stack.length * 6) % 360;
-          if (combo >= 3){ cur.bh = B * 2; cur.y = stack[stack.length - 1].y - B * 2; } // honor active fever
+          cur.bh = feverBH(); cur.y = stack[stack.length - 1].y - cur.bh; // honor active fever
         }
       }
     } else {
-      let hitWall = false;
-      if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; hitWall = true; }
-      if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; hitWall = true; }
-      if (hitWall){
+      let wall = 0; // -1 hit left wall, +1 hit right wall
+      if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; wall = -1; }
+      if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; wall = 1; }
+      if (wall){
         cur.bounces = (cur.bounces || 0) + 1;
-        if (cur.bounces >= 3 && cur.w > 24){ // stalling penalty: the wall shaves the block
-          cur.w = Math.max(20, cur.w - Math.max(7, cur.w * 0.07));
-          chips(cur.x, cur.y, cur.hue, 4);
-          tone(280, 0.05, 'square', 0.09);
-          if (cur.bounces === 3) floatTxt(cur.x, cur.y - 16, '✂️ 너무 오래 끌었어!', '#ff9d9d', 15);
+        if (cur.bounces >= 3){ // stalling penalty: the wall slices the struck edge clean off
+          const trim = Math.max(12, cur.w * 0.1);
+          const edge = cur.x + wall * cur.w / 2; // the tip that struck the wall
+          if (cur.w - trim <= 8){ // nothing left to stack → game over
+            debris.push({ x: cur.x, y: cur.y, w: cur.w, vy: -1.2, rot: 0, vr: wall * 0.15, hue: cur.hue, bh: cur.bh });
+            floatTxt(edge, cur.y - 16, '✂️', '#fff', 24);
+            cur = null; die();
+          } else { // the cut-off slice tumbles away; block keeps the far edge fixed
+            debris.push({ x: edge - wall * trim / 2, y: cur.y, w: trim, vy: -1.4, rot: 0, vr: wall * 0.16, hue: cur.hue, bh: cur.bh });
+            cur.w -= trim; cur.x -= wall * trim / 2;
+            floatTxt(edge, cur.y - 16, '✂️', '#fff', 22);
+            tone(280, 0.06, 'square', 0.1);
+          }
         }
       }
     }
     tick++;
-    if (combo >= 3 && tick % 2 === 0) // fever trail
+    if (cur && combo >= 3 && tick % 2 === 0) // fever trail (cur may be gone after a fatal trim)
       parts.push({ x: cur.x + (Math.random() - 0.5) * cur.w, y: cur.y + B,
                    vx: (Math.random() - 0.5) * 1.5, vy: Math.random() * 1.5 + 0.5,
                    s: 3, t: 0.7, hue: Math.random() * 360 });
@@ -917,10 +933,13 @@ window.__sky = {
   _cur: () => cur,
   _top: () => stack[stack.length - 1],
   topX: () => stack[stack.length - 1].x,
+  curBH: () => cur ? cur.bh / B : 0,
+  nDebris: () => debris.length,
+  _step: (dt) => update(dt || 1),
   W: () => W,
   bless(r){ blessing(r); },
-  makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.wasBomb = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
-  makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.wasCat = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
+  makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.specials = 1; cur.catUsed = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
+  makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.specials = 1; cur.catUsed = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
 };
 </script>
 </body>
