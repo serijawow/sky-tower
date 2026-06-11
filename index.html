@@ -669,7 +669,7 @@ function update(dt){
       if (cur.x > cur.cx + cur.range){ cur.x = cur.cx + cur.range; cur.dir = -1; wall = 1; }
       if (wall){
         cur.bounces = (cur.bounces || 0) + 1;
-        if (combo >= 3 && cur.bounces >= 2){ // fever (incl. MAX) not placed in 2 bounces → cools to normal
+        if (combo >= 3 && cur.bounces >= 4){ // fever (incl. MAX) not placed within 2 round-trips → cools to normal
           combo = 0;
           cur.bh = B; cur.y = stack[stack.length - 1].y - B;
           cur.hue = (205 + stack.length * 6) % 360;
