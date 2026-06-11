@@ -242,13 +242,14 @@ function firework(x, y, n){
 /* ================= bgm (procedural chiptune) ================= */
 let muted = false; try { muted = localStorage.getItem('skytower_mute') === '1'; } catch(e) {}
 let bgmOn = false, bgmTimer = null, bgmNext = 0, bgmStep = 0;
-// euphoric happy-hardcore-style loop in A major: F#m – D – A – E (8 steps/chord, 32-step bar)
-const CH_ROOT = [92.50, 73.42, 110.00, 82.41]; // F#2, D2, A2, E2 — bass root per 8-step block
-const LEAD = [
-  369.99, 0, 440.00, 554.37, 0, 440.00, 554.37, 739.99, // F#m: F#4 A4 C#5 F#5
-  293.66, 0, 369.99, 440.00, 0, 369.99, 440.00, 587.33, // D:   D4 F#4 A4 D5
-  440.00, 0, 554.37, 659.25, 0, 554.37, 659.25, 880.00, // A:   A4 C#5 E5 A5
-  329.63, 0, 415.30, 493.88, 0, 415.30, 493.88, 659.25  // E:   E4 G#4 B4 E5
+// 2000s J-eurobeat / para-para chiptune in A minor: Am – F – C – G (one chord per bar, 4-bar loop)
+const PROG = [220.00, 174.61, 130.81, 196.00]; // A3 F3 C3 G3 — bass root per bar
+const MOTIF = [440, 0, 0, 0, 523.25, 0, 0, 0, 587.33, 0, 0, 0, 659.25, 0, 0, 0]; // sparse verse riff (A C D E)
+const HOOK = [ // 64-step (4-bar) chorus hook, bouncy with octave jumps — the ear candy
+  659.25, 0, 880.00, 0, 659.25, 0, 523.25, 659.25, 440.00, 0, 523.25, 659.25, 880.00, 0, 659.25, 523.25, // Am
+  698.46, 0, 880.00, 0, 698.46, 0, 523.25, 698.46, 523.25, 0, 698.46, 880.00, 880.00, 0, 698.46, 523.25, // F
+  659.25, 0, 783.99, 0, 659.25, 0, 523.25, 659.25, 783.99, 0, 659.25, 523.25, 523.25, 0, 659.25, 783.99, // C
+  587.33, 0, 783.99, 0, 587.33, 0, 493.88, 587.33, 783.99, 0, 587.33, 493.88, 493.88, 0, 587.33, 783.99  // G
 ];
 function note(f, t, d, type, vol){
   const a = ac(); if (!a) return;
@@ -262,20 +263,40 @@ function kick(t){ // four-on-the-floor thump
   const a = ac(); if (!a) return;
   const o = a.createOscillator(), g = a.createGain();
   o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(50, t + 0.10);
-  g.gain.setValueAtTime(0.45, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+  g.gain.setValueAtTime(0.42, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
   o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.15);
 }
+let noiseBuf = null;
+function noise(t, dur, hpf, vol){ // claps / hi-hats
+  const a = ac(); if (!a) return;
+  if (!noiseBuf){
+    noiseBuf = a.createBuffer(1, (a.sampleRate * 0.2) | 0, a.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+  }
+  const src = a.createBufferSource(); src.buffer = noiseBuf;
+  const f = a.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hpf;
+  const g = a.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(a.destination); src.start(t); src.stop(t + dur + 0.02);
+}
+function coin(t){ note(987.77, t, 0.05, 'square', 0.05); note(1318.51, t + 0.05, 0.07, 'square', 0.05); } // arcade chirp
 function bgmTick(){
   const a = ac(); if (!a || !bgmOn) return;
-  const fever = combo >= 3, spb = fever ? 0.088 : 0.105; // ~170 / ~145 BPM; fever pushes it faster
+  const fever = combo >= 3, spb = fever ? 0.082 : 0.097; // ~155 BPM; fever pushes it faster
   if (bgmNext < a.currentTime) bgmNext = a.currentTime + 0.02;
-  while (bgmNext < a.currentTime + 0.18){
-    const i = bgmStep % 32, root = CH_ROOT[(i / 8) | 0];
+  while (bgmNext < a.currentTime + 0.2){
+    const step = bgmStep % 64, bar = (step / 16) | 0, i = step % 16;
+    const section = ((bgmStep / 16) | 0) % 8; // 0-3 stripped verse, 4-7 full chorus (builds, then drops, loops)
+    const root = PROG[bar], t = bgmNext;
     if (!muted){
-      if (i % 4 === 0) kick(bgmNext);                                       // beat
-      if (i % 2 === 1) note(root * 2, bgmNext, spb * 0.8, 'square', 0.06);  // rolling offbeat bass
-      if (i % 8 === 0) note(root, bgmNext, spb * 1.6, 'sawtooth', 0.05);    // chord root pulse
-      if (LEAD[i]) note(LEAD[i] * (fever ? 2 : 1), bgmNext, spb * 0.9, 'triangle', fever ? 0.10 : 0.075);
+      if (i % 4 === 0) kick(t);                                              // four-on-the-floor
+      note(i % 2 ? root : root / 2, t, spb * 0.85, 'square', 0.05);          // rolling octave-bounce bass
+      if (i === 0) note(root * 2, t, spb * 2, 'sawtooth', 0.04);            // chord stab
+      if (section >= 2 && i % 2 === 1) noise(t, 0.025, 7000, 0.05);          // hi-hat offbeats
+      if (section >= 4 && (i === 4 || i === 12)) noise(t, 0.07, 1200, 0.16); // clap on 2 & 4
+      if (section >= 4){ const n = HOOK[step]; if (n) note(n * (fever ? 2 : 1), t, spb * 0.9, 'triangle', 0.08); } // chorus hook
+      else { const n = MOTIF[i]; if (n) note(n, t, spb * 0.9, 'triangle', 0.06); }                                // verse motif
+      if (section >= 6 && (i === 6 || i === 14)) coin(t);                    // chorus ear-candy chirps
     }
     bgmNext += spb; bgmStep++;
   }
