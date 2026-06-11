@@ -303,6 +303,8 @@ function toast(m){
 }
 
 /* ================= game flow ================= */
+// keep a block of width w fully on screen (used whenever width is restored/grown)
+function fitX(x, w){ return Math.max(w / 2 + 2, Math.min(W - w / 2 - 2, x)); }
 function reset(){
   stack = [{ x: W / 2, y: 0, w: baseW(), hue: 205, land: 0, bh: B }];
   debris = []; parts = []; floats = []; confettis = [];
@@ -337,7 +339,7 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
   nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
 
   if (roll < 0.25 && top0.w < baseW() * 0.7){ // 1) full width restore — only when you need it
-    top0.w = baseW(); top0.land = 1.4;
+    top0.w = baseW(); top0.x = fitX(top0.x, top0.w); top0.land = 1.4;
     floatTxt(top0.x, top0.y - 30, '😼 몸집 복구 냥!! 풀사이즈', '#ffd76b', 21);
     firework(top0.x, top0.y, 16); flash = 0.4;
     sMeow();
@@ -378,6 +380,13 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
       }, 200 + i * 160);
     }
   }
+}
+function catchMiss(){ // tapped a special with no tower overlap — fumbled like a normal block
+  if (!cur) return;
+  floatTxt(cur.x, cur.y - 20, '허공을 짚었다!', '#ff8d7a', 18);
+  debris.push({ x: cur.x, y: cur.y, w: cur.w, vy: -1.5, rot: 0, vr: 0.05, hue: cur.hue, bh: cur.bh });
+  cur = null;
+  die();
 }
 function explode(){ // tapped the bomb: top floors crumble, smoke, fade away
   const bx = cur.x, by = cur.y;
@@ -473,6 +482,7 @@ function drop(){
     if (cur.w < baseW() * 0.32) tone(110, 0.18, 'triangle', 0.4, 55); // danger thump
   }
 
+  cur.x = fitX(cur.x, cur.w); // never let a (re)grown block hang off screen
   stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1, bh: cur.bh });
   floors += cur.bh / B; // double blocks count double
   if (cur.bh > B) floatTxt(cur.x + cur.w / 2 + 28, cur.y + cur.bh / 2, '+2층!', '#ffd76b', 16);
@@ -556,7 +566,13 @@ function tap(){
   if (state === 'menu') start();
   else if (state === 'play'){
     if (cur && cur.bomb) explode(); // you were told not to press
-    else if (cur && cur.cat) blessing(); // the alpha cat rewards the brave
+    else if (cur && cur.cat){ // the cat is judged by position, just like a normal block
+      const top = stack[stack.length - 1];
+      const ov = Math.min(cur.x + cur.w / 2, top.x + top.w / 2)
+               - Math.max(cur.x - cur.w / 2, top.x - top.w / 2);
+      if (ov > 0) blessing();   // caught over the tower → blessing
+      else catchMiss();         // grabbed at thin air → miss, same as a normal block
+    }
     else drop();
   }
   else if (state === 'over' && performance.now() - overAt > 1200) start(); // quick retry
@@ -619,8 +635,18 @@ function update(dt){
         }
       }
     } else {
-      if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; }
-      if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; }
+      let hitWall = false;
+      if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; hitWall = true; }
+      if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; hitWall = true; }
+      if (hitWall){
+        cur.bounces = (cur.bounces || 0) + 1;
+        if (cur.bounces >= 3 && cur.w > 24){ // stalling penalty: the wall shaves the block
+          cur.w = Math.max(20, cur.w - Math.max(7, cur.w * 0.07));
+          chips(cur.x, cur.y, cur.hue, 4);
+          tone(280, 0.05, 'square', 0.09);
+          if (cur.bounces === 3) floatTxt(cur.x, cur.y - 16, '✂️ 너무 오래 끌었어!', '#ff9d9d', 15);
+        }
+      }
     }
     tick++;
     if (combo >= 3 && tick % 2 === 0) // fever trail
@@ -888,6 +914,10 @@ window.__sky = {
   cat: () => !!(cur && cur.cat),
   nextBomb: () => nextBombAt,
   curW: () => cur ? Math.round(cur.w) : 0,
+  _cur: () => cur,
+  _top: () => stack[stack.length - 1],
+  topX: () => stack[stack.length - 1].x,
+  W: () => W,
   bless(r){ blessing(r); },
   makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.wasBomb = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
   makeCat(){ if (cur){ cur.cat = true; cur.bomb = false; cur.wasCat = true; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } }
