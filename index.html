@@ -325,7 +325,7 @@ function spawn(){
   const bomb = !gold && floors >= 6 && (floors >= nextBombAt || (fev && Math.random() < 0.06));
   const cat  = !gold && !bomb && floors >= 10 && (floors >= nextCatAt || (fev && Math.random() < 0.06));
   const feverIdx = fev ? combo - 2 : 0;
-  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.45, 4.5)) * (W < 420 ? 0.95 : 1);
+  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.36, 4.5)) * (W < 420 ? 0.95 : 1);
   if (bomb || cat) spd *= 1.8; // specials zip past in one fast pass — read fast!
   const dir = Math.random() < 0.5 ? 1 : -1;
   const bh = (!bomb && !cat) ? feverBH() : B; // fever blocks grow taller each step (1→2→3→4)
@@ -334,8 +334,32 @@ function spawn(){
           specials: (bomb || cat) ? 1 : 0, catUsed: cat, // ≤2 special passes; cat once, bomb may repeat
           hue: bomb ? 4 : gold ? 46 : (205 + L * 6) % 360 };
 }
-function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessings
-  cur = null;
+function checkBeat(x, y){ // friend's record just passed → fanfare (only once)
+  if (challenge > 0 && !beatChall && floors > challenge){
+    beatChall = true;
+    floatTxt(x, y, '친구 기록 돌파!! 🔥', '#7dffc4', 22);
+    confetti(); sFanfare();
+  }
+}
+function blessing(forcedRoll){ // caught the alpha cat: land it at the matched point, then bless on top
+  if (cur){ // the cat is placed like a normal block; the blessing builds in its exact shape
+    const t = stack[stack.length - 1];
+    const dx = cur.x - t.x;
+    const Lp = Math.max(cur.x - cur.w / 2, t.x - t.w / 2);
+    const Rp = Math.min(cur.x + cur.w / 2, t.x + t.w / 2);
+    const ov = Rp - Lp;
+    if (Math.abs(dx) <= PERF) cur.x = t.x;          // perfect catch keeps full width
+    else if (ov > 0){                                // sloppy catch trims to the overlap
+      const pw = cur.w - ov, px = dx > 0 ? Rp + pw / 2 : Lp - pw / 2;
+      debris.push({ x: px, y: cur.y, w: pw, vy: -1.2, rot: 0, vr: (dx > 0 ? 1 : -1) * 0.06, hue: cur.hue, bh: cur.bh });
+      cur.x = (Lp + Rp) / 2; cur.w = Math.max(12, ov);
+    }
+    cur.x = fitX(cur.x, cur.w);
+    stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: 285, land: 1, bh: B }); // alpha cat block (purple)
+    floors++; $('floors').textContent = floors;
+    camYT = cur.y - H * 0.62; checkBeat(cur.x, cur.y - 20);
+    cur = null;
+  }
   const roll = forcedRoll !== undefined ? forcedRoll : Math.random();
   const top0 = stack[stack.length - 1];
   for (let i = 0; i < 4; i++)
@@ -353,6 +377,7 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
                  land: 1.4, bh: B });
     floors++; $('floors').textContent = floors;
     camYT = stack[stack.length - 1].y - H * 0.62;
+    checkBeat(top0.x, top0.y - B - 10);
     combo = Math.max(combo, 5);
     $('combo').textContent = '🔥 FEVER x' + combo;
     $('combo').classList.remove('hidden-hard');
@@ -370,6 +395,7 @@ function blessing(forcedRoll){ // tapped the alpha cat: one of 3 random blessing
         stack.push({ x: t2.x, y: t2.y - B, w: t2.w, hue: (205 + stack.length * 6) % 360,
                      land: 1.5, bh: B });
         floors++; $('floors').textContent = floors;
+        checkBeat(t2.x, t2.y - B - 10);
         shake = Math.max(shake, 7);
         tone(70 + Math.random() * 20, 0.18, 'sine', 0.5, 45); // KWANG
         tone(180, 0.06, 'square', 0.12);
@@ -494,11 +520,7 @@ function drop(){
   $('combo').textContent = combo >= 3 ? '🔥 FEVER x' + combo : '🔥 PERFECT x' + combo;
   $('combo').classList.toggle('hidden-hard', combo < 2);
 
-  if (challenge > 0 && !beatChall && floors > challenge){
-    beatChall = true;
-    floatTxt(cur.x, cur.y - 40, '친구 기록 돌파!! 🔥', '#7dffc4', 22);
-    confetti(); sFanfare();
-  }
+  checkBeat(cur.x, cur.y - 40);
   const zi = zoneIdxOf(floors);
   if (zi !== curZone){
     curZone = zi;
@@ -648,10 +670,10 @@ function update(dt){
       if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; wall = 1; }
       if (wall){
         cur.bounces = (cur.bounces || 0) + 1;
-        if (cur.bounces >= 3){ // stalling penalty: the wall slices the struck edge clean off
-          const trim = Math.max(12, cur.w * 0.1);
+        if (cur.bounces >= 3){ // stalling penalty: big slices, and no more than ~7 wall touches
+          const trim = Math.max(baseW() * 0.18, cur.w * 0.15);
           const edge = cur.x + wall * cur.w / 2; // the tip that struck the wall
-          if (cur.w - trim <= 8){ // nothing left to stack → game over
+          if (cur.bounces >= 7 || cur.w - trim <= 10){ // sliced away / stalled too long → game over
             debris.push({ x: cur.x, y: cur.y, w: cur.w, vy: -1.2, rot: 0, vr: wall * 0.15, hue: cur.hue, bh: cur.bh });
             floatTxt(edge, cur.y - 16, '✂️', '#fff', 24);
             cur = null; die();
@@ -776,6 +798,36 @@ function drawTargetLine(n, col, label){
   ctx.restore();
 }
 
+function challengeBubbleText(){ // friend's trash-talk, escalating as you close in
+  const d = challenge - floors;
+  if (d > 0){
+    if (d >= 30) return 'ㅋㅋ 한참 멀었는데? ' + d + '층';
+    if (d >= 15) return '여기서 포기하지? ㅎㅎ ' + d + '층';
+    if (d >= 5)  return '어... 따라오네? ' + d + '층';
+    return '헉 오지마 ㄷㄷ ' + d + '층';
+  }
+  if (d === 0) return 'ㅠ_ㅠ'; // tied — friend panics
+  return null;
+}
+function drawBubble(text, lineY){
+  ctx.save();
+  ctx.font = '700 14px sans-serif';
+  const padX = 14, h = 30, w = ctx.measureText(text).width + padX * 2;
+  const cx = W / 2, by = Math.max(60, Math.min(H - 90, lineY - 28));
+  const x0 = cx - w / 2, y0 = by - h / 2;
+  ctx.fillStyle = 'rgba(20,26,54,0.92)';
+  ctx.strokeStyle = 'rgba(255,180,90,0.75)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x0, y0, w, h, 11); else ctx.rect(x0, y0, w, h);
+  ctx.fill(); ctx.stroke();
+  if (lineY > by + h / 2 + 4){ // tail points down to the friend line
+    ctx.beginPath(); ctx.moveTo(cx - 7, y0 + h - 1); ctx.lineTo(cx + 7, y0 + h - 1); ctx.lineTo(cx, y0 + h + 9); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#ffe6b0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, by);
+  ctx.restore();
+}
+
 function render(){
   // sky (zone-colored, lerped)
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -890,6 +942,12 @@ function render(){
     ctx.globalAlpha = flash * 0.25;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
+  }
+
+  // friend-score speech bubble: shows the gap & taunts while you're within range and not yet past
+  if (state === 'play' && challenge > 0 && floors <= challenge && (challenge - floors) <= 40){
+    const t = challengeBubbleText();
+    if (t) drawBubble(t, -challenge * B - camY);
   }
 }
 
