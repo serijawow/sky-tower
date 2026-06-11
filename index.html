@@ -371,7 +371,7 @@ function spawn(){
   const bomb = !gold && floors >= 6 && (floors >= nextBombAt || (fev && Math.random() < 0.06));
   const cat  = !gold && !bomb && floors >= 10 && (floors >= nextCatAt || (fev && Math.random() < 0.06));
   const feverIdx = fev ? combo - 2 : 0;
-  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.36, 4.5)) * (W < 420 ? 0.95 : 1);
+  let spd = (Math.min(2.5 + floors * 0.065, 7.5) + Math.min(feverIdx * 0.30, 3.8)) * (W < 420 ? 0.95 : 1);
   if (bomb || cat) spd *= 1.8; // specials zip past in one fast pass — read fast!
   const dir = Math.random() < 0.5 ? 1 : -1;
   const bh = (!bomb && !cat) ? feverBH() : B; // fever blocks grow taller each step (1→2→3→4)
