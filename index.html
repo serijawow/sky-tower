@@ -129,7 +129,7 @@ function resize(){
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  if (state === 'play') camYT = stack[stack.length - 1].y - H * 0.62;
+  if (state === 'play'){ camYT = stack[stack.length - 1].y - H * 0.62; camXT = stack[stack.length - 1].x; }
 }
 window.addEventListener('resize', resize);
 
@@ -153,7 +153,7 @@ function lerpHue(a, b, k){ const d = ((b - a + 540) % 360) - 180; return (a + d 
 let state = 'menu';      // menu | play | dying | over
 let stack = [], cur = null, debris = [], parts = [], floats = [], confettis = [];
 let floors = 0, combo = 0, best = 0, newRec = false, beatChall = false, flash = 0;
-let camY = 0, camYT = 0, zoom = 1, zoomT = 1, shake = 0;
+let camX = 0, camXT = 0, camY = 0, camYT = 0, zoom = 1, zoomT = 1, shake = 0;
 let bgH = 224, bgS = 52, bgL = 17, curZone = 0, timeScale = 1, overAt = 0, tick = 0;
 let nextBombAt = 8, nextCatAt = 12;
 try { best = +localStorage.getItem('skytower_best') || 0; } catch(e) {}
@@ -304,14 +304,13 @@ function toast(m){
 
 /* ================= game flow ================= */
 // keep a block of width w fully on screen (used whenever width is restored/grown)
-function fitX(x, w){ return Math.max(w / 2 + 2, Math.min(W - w / 2 - 2, x)); }
 function reset(){
   stack = [{ x: W / 2, y: 0, w: baseW(), hue: 205, land: 0, bh: B }];
   debris = []; parts = []; floats = []; confettis = [];
   floors = 0; combo = 0; newRec = false; beatChall = false;
   curZone = 0; timeScale = 1;
   nextBombAt = 8 + Math.floor(Math.random() * 5); nextCatAt = 12 + Math.floor(Math.random() * 7);
-  camYT = -H * 0.62; camY = camYT; zoom = 1; zoomT = 1; shake = 0;
+  camYT = -H * 0.62; camY = camYT; camXT = W / 2; camX = W / 2; zoom = 1; zoomT = 1; shake = 0;
   $('floors').textContent = '0';
   $('combo').classList.add('hidden-hard');
 }
@@ -329,7 +328,8 @@ function spawn(){
   if (bomb || cat) spd *= 1.8; // specials zip past in one fast pass — read fast!
   const dir = Math.random() < 0.5 ? 1 : -1;
   const bh = (!bomb && !cat) ? feverBH() : B; // fever blocks grow taller each step (1→2→3→4)
-  cur = { x: W / 2 - dir * range, y: top.y - bh, w: top.w,
+  camXT = top.x; // the view follows the tower's lean
+  cur = { x: top.x - dir * range, y: top.y - bh, w: top.w, cx: top.x, // oscillate around the tower top, not screen center
           dir, spd, range, gold, bomb, cat, bh,
           specials: (bomb || cat) ? 1 : 0, catUsed: cat, // ≤2 special passes; cat once, bomb may repeat
           hue: bomb ? 4 : gold ? 46 : (205 + L * 6) % 360 };
@@ -354,7 +354,6 @@ function blessing(forcedRoll){ // caught the alpha cat: land it at the matched p
       debris.push({ x: px, y: cur.y, w: pw, vy: -1.2, rot: 0, vr: (dx > 0 ? 1 : -1) * 0.06, hue: cur.hue, bh: cur.bh });
       cur.x = (Lp + Rp) / 2; cur.w = Math.max(12, ov);
     }
-    cur.x = fitX(cur.x, cur.w);
     stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: 285, land: 1, bh: B }); // alpha cat block (purple)
     floors++; $('floors').textContent = floors;
     camYT = cur.y - H * 0.62; checkBeat(cur.x, cur.y - 20);
@@ -367,7 +366,7 @@ function blessing(forcedRoll){ // caught the alpha cat: land it at the matched p
   nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
 
   if (roll < 0.25 && top0.w < baseW() * 0.7){ // 1) full width restore — only when you need it
-    top0.w = baseW(); top0.x = fitX(top0.x, top0.w); top0.land = 1.4;
+    top0.w = baseW(); top0.land = 1.4;
     floatTxt(top0.x, top0.y - 30, '😼 몸집 복구 냥!! 풀사이즈', '#ffd76b', 21);
     firework(top0.x, top0.y, 16); flash = 0.4;
     sMeow();
@@ -512,7 +511,6 @@ function drop(){
     if (cur.w < baseW() * 0.32) tone(110, 0.18, 'triangle', 0.4, 55); // danger thump
   }
 
-  cur.x = fitX(cur.x, cur.w); // never let a (re)grown block hang off screen
   stack.push({ x: cur.x, y: cur.y, w: cur.w, hue: cur.hue, land: 1, bh: cur.bh });
   floors += cur.bh / B; // double blocks count double
   if (cur.bh > B) floatTxt(cur.x + cur.w / 2 + 28, cur.y + cur.bh / 2, '+' + (cur.bh / B) + '층!', '#ffd76b', 16);
@@ -626,6 +624,7 @@ function lerpK(k, dt){ return 1 - Math.pow(1 - k, dt); }
 
 function update(dt){
   camY += (camYT - camY) * lerpK(0.12, dt);
+  camX += (camXT - camX) * lerpK(0.10, dt); // pan sideways to keep the tower top centered
   zoom += (zoomT - zoom) * lerpK(0.09, dt);
   shake *= Math.pow(0.86, dt);
   flash *= Math.pow(0.85, dt);
@@ -638,14 +637,14 @@ function update(dt){
   if (state === 'play' && cur){
     cur.x += cur.dir * cur.spd * dt;
     if (cur.bomb || cur.cat){ // special pass; at the wall it may flip again (bomb can repeat, cat once)
-      if ((cur.dir > 0 && cur.x > W / 2 + cur.range) || (cur.dir < 0 && cur.x < W / 2 - cur.range)){
+      if ((cur.dir > 0 && cur.x > cur.cx + cur.range) || (cur.dir < 0 && cur.x < cur.cx - cur.range)){
         const wasBomb = cur.bomb;
         if (wasBomb) nextBombAt = floors + 11 + Math.floor(Math.random() * 8);
         else {
           nextCatAt = floors + 12 + Math.floor(Math.random() * 7);
-          floatTxt(W / 2, stack[stack.length - 1].y - 60, '😼 …시크하게 지나갔다', '#9fb4e8', 14);
+          floatTxt(cur.cx, stack[stack.length - 1].y - 60, '😼 …시크하게 지나갔다', '#9fb4e8', 14);
         }
-        cur.x = cur.dir > 0 ? W / 2 + cur.range : W / 2 - cur.range;
+        cur.x = cur.dir > 0 ? cur.cx + cur.range : cur.cx - cur.range;
         cur.dir = -cur.dir;
         cur.bomb = false; cur.cat = false;
         const r = Math.random();
@@ -666,8 +665,8 @@ function update(dt){
       }
     } else {
       let wall = 0; // -1 hit left wall, +1 hit right wall
-      if (cur.x < W / 2 - cur.range){ cur.x = W / 2 - cur.range; cur.dir = 1; wall = -1; }
-      if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; wall = 1; }
+      if (cur.x < cur.cx - cur.range){ cur.x = cur.cx - cur.range; cur.dir = 1; wall = -1; }
+      if (cur.x > cur.cx + cur.range){ cur.x = cur.cx + cur.range; cur.dir = -1; wall = 1; }
       if (wall){
         cur.bounces = (cur.bounces || 0) + 1;
         if (combo >= 3 && cur.bounces >= 2){ // fever (incl. MAX) not placed in 2 bounces → cools to normal
@@ -798,11 +797,11 @@ function drawTargetLine(n, col, label){
   ctx.save();
   ctx.strokeStyle = col; ctx.globalAlpha = 0.55; ctx.lineWidth = 1.5;
   ctx.setLineDash([7, 7]);
-  ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(W - 14, y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(camX - W / 2 + 14, y); ctx.lineTo(camX + W / 2 - 14, y); ctx.stroke();
   ctx.setLineDash([]);
   ctx.globalAlpha = 0.9; ctx.fillStyle = col;
   ctx.font = '700 12px sans-serif'; ctx.textAlign = 'right';
-  ctx.fillText(label + ' ' + n + '층', W - 16, y - 6);
+  ctx.fillText(label + ' ' + n + '층', camX + W / 2 - 16, y - 6);
   ctx.restore();
 }
 
@@ -856,6 +855,7 @@ function render(){
   // world (camera + shake + game-over zoom)
   ctx.save();
   ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  ctx.translate(W / 2 - camX, 0); // horizontal camera: world camX maps to screen center
   ctx.translate(W / 2, H * 0.88); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -H * 0.88);
 
   for (let i = 0; i < stack.length; i++){
@@ -1002,6 +1002,9 @@ window.__sky = {
   curBH: () => cur ? cur.bh / B : 0,
   nDebris: () => debris.length,
   _step: (dt) => update(dt || 1),
+  camX: () => Math.round(camX),
+  camXT: () => Math.round(camXT),
+  curCx: () => cur ? Math.round(cur.cx) : 0,
   W: () => W,
   bless(r){ blessing(r); },
   makeBomb(){ if (cur){ cur.bomb = true; cur.cat = false; cur.specials = 1; cur.catUsed = false; cur.bh = B; cur.y = stack[stack.length - 1].y - B; } },
