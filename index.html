@@ -242,8 +242,14 @@ function firework(x, y, n){
 /* ================= bgm (procedural chiptune) ================= */
 let muted = false; try { muted = localStorage.getItem('skytower_mute') === '1'; } catch(e) {}
 let bgmOn = false, bgmTimer = null, bgmNext = 0, bgmStep = 0;
-const BASS = [110, 0, 110, 0, 82.41, 0, 98, 0, 110, 0, 110, 0, 130.81, 0, 98, 0];
-const LEAD = [440, 523.25, 659.25, 880, 0, 659.25, 523.25, 0, 440, 523.25, 659.25, 783.99, 880, 0, 1046.5, 0];
+// euphoric happy-hardcore-style loop in A major: F#m – D – A – E (8 steps/chord, 32-step bar)
+const CH_ROOT = [92.50, 73.42, 110.00, 82.41]; // F#2, D2, A2, E2 — bass root per 8-step block
+const LEAD = [
+  369.99, 0, 440.00, 554.37, 0, 440.00, 554.37, 739.99, // F#m: F#4 A4 C#5 F#5
+  293.66, 0, 369.99, 440.00, 0, 369.99, 440.00, 587.33, // D:   D4 F#4 A4 D5
+  440.00, 0, 554.37, 659.25, 0, 554.37, 659.25, 880.00, // A:   A4 C#5 E5 A5
+  329.63, 0, 415.30, 493.88, 0, 415.30, 493.88, 659.25  // E:   E4 G#4 B4 E5
+];
 function note(f, t, d, type, vol){
   const a = ac(); if (!a) return;
   const o = a.createOscillator(), g = a.createGain();
@@ -252,15 +258,24 @@ function note(f, t, d, type, vol){
   g.gain.exponentialRampToValueAtTime(0.0001, t + d);
   o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + 0.02);
 }
+function kick(t){ // four-on-the-floor thump
+  const a = ac(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(50, t + 0.10);
+  g.gain.setValueAtTime(0.45, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + 0.15);
+}
 function bgmTick(){
   const a = ac(); if (!a || !bgmOn) return;
-  const fever = combo >= 3, spb = fever ? 0.10 : 0.13; // step length: fever speeds music up
+  const fever = combo >= 3, spb = fever ? 0.088 : 0.105; // ~170 / ~145 BPM; fever pushes it faster
   if (bgmNext < a.currentTime) bgmNext = a.currentTime + 0.02;
   while (bgmNext < a.currentTime + 0.18){
-    const i = bgmStep % 16;
+    const i = bgmStep % 32, root = CH_ROOT[(i / 8) | 0];
     if (!muted){
-      if (BASS[i]) note(BASS[i], bgmNext, spb * 0.9, 'square', 0.085);
-      if (LEAD[i]) note(LEAD[i] * (fever ? 2 : 1), bgmNext, spb * 0.85, 'triangle', fever ? 0.11 : 0.08);
+      if (i % 4 === 0) kick(bgmNext);                                       // beat
+      if (i % 2 === 1) note(root * 2, bgmNext, spb * 0.8, 'square', 0.06);  // rolling offbeat bass
+      if (i % 8 === 0) note(root, bgmNext, spb * 1.6, 'sawtooth', 0.05);    // chord root pulse
+      if (LEAD[i]) note(LEAD[i] * (fever ? 2 : 1), bgmNext, spb * 0.9, 'triangle', fever ? 0.10 : 0.075);
     }
     bgmNext += spb; bgmStep++;
   }
