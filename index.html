@@ -378,10 +378,10 @@ function blessing(forcedRoll){ // caught the alpha cat: land it at the matched p
     floors++; $('floors').textContent = floors;
     camYT = stack[stack.length - 1].y - H * 0.62;
     checkBeat(top0.x, top0.y - B - 10);
-    combo = Math.max(combo, 5);
+    combo = Math.max(combo, 6); // jump straight to MAX-height fever (4-floor blocks); never a downgrade
     $('combo').textContent = '🔥 FEVER x' + combo;
     $('combo').classList.remove('hidden-hard');
-    floatTxt(top0.x, top0.y - B - 30, '😼🔥 알파 피버 전염!! +1층', '#ff9d4d', 22);
+    floatTxt(top0.x, top0.y - B - 30, '😼🔥 알파 피버 MAX!!', '#ff9d4d', 22);
     firework(top0.x, top0.y - B, 16); flash = 0.4;
     tone(330, 0.07, 'square', 0.14);
     sMeow();
@@ -670,7 +670,15 @@ function update(dt){
       if (cur.x > W / 2 + cur.range){ cur.x = W / 2 + cur.range; cur.dir = -1; wall = 1; }
       if (wall){
         cur.bounces = (cur.bounces || 0) + 1;
-        if (cur.bounces >= 3){ // stalling penalty: big slices, and no more than ~7 wall touches
+        if (combo >= 3 && cur.bounces >= 2){ // fever (incl. MAX) not placed in 2 bounces → cools to normal
+          combo = 0;
+          cur.bh = B; cur.y = stack[stack.length - 1].y - B;
+          cur.hue = (205 + stack.length * 6) % 360;
+          cur.bounces = 0; // fresh grace as a plain block
+          $('combo').classList.add('hidden-hard');
+          floatTxt(cur.x, cur.y - 16, '🔥 식었다…', '#9fb4e8', 16);
+          tone(220, 0.14, 'sawtooth', 0.12, 110);
+        } else if (cur.bounces >= 3){ // stalling penalty: big slices, and no more than ~7 wall touches
           const trim = Math.max(baseW() * 0.18, cur.w * 0.15);
           const edge = cur.x + wall * cur.w / 2; // the tip that struck the wall
           if (cur.bounces >= 7 || cur.w - trim <= 10){ // sliced away / stalled too long → game over
